@@ -1,0 +1,15 @@
+C:\Users\ashok\OneDrive\Desktop\ipl-ticket-booking\ipl-api-gateway\src\main\java\com\ipl\gateway\ApiGatewayApplication.java
+C:\Users\ashok\OneDrive\Desktop\ipl-ticket-booking\ipl-api-gateway\src\main\java\com\ipl\gateway\config\AppCorsProperties.java
+C:\Users\ashok\OneDrive\Desktop\ipl-ticket-booking\ipl-api-gateway\src\main\java\com\ipl\gateway\config\CorsConfig.java
+C:\Users\ashok\OneDrive\Desktop\ipl-ticket-booking\ipl-api-gateway\src\main\java\com\ipl\gateway\config\GatewayRoutesConfig.java
+C:\Users\ashok\OneDrive\Desktop\ipl-ticket-booking\ipl-api-gateway\src\main\java\com\ipl\gateway\config\LoggingGlobalFilter.java
+C:\Users\ashok\OneDrive\Desktop\ipl-ticket-booking\ipl-api-gateway\src\main\java\com\ipl\gateway\config\SecurityConfig.java
+C:\Users\ashok\OneDrive\Desktop\ipl-ticket-booking\ipl-api-gateway\src\main\java\com\ipl\gateway\config\ServiceUrlProperties.java
+C:\Users\ashok\OneDrive\Desktop\ipl-ticket-booking\ipl-api-gateway\src\main\java\com\ipl\gateway\dto\ErrorResponse.java
+C:\Users\ashok\OneDrive\Desktop\ipl-ticket-booking\ipl-api-gateway\src\main\java\com\ipl\gateway\security\GatewayAccessDeniedHandler.java
+C:\Users\ashok\OneDrive\Desktop\ipl-ticket-booking\ipl-api-gateway\src\main\java\com\ipl\gateway\security\GatewayAuthenticationEntryPoint.java
+C:\Users\ashok\OneDrive\Desktop\ipl-ticket-booking\ipl-api-gateway\src\main\java\com\ipl\gateway\security\GatewayErrorResponseWriter.java
+C:\Users\ashok\OneDrive\Desktop\ipl-ticket-booking\ipl-api-gateway\src\main\java\com\ipl\gateway\security\GatewayJwtProperties.java
+C:\Users\ashok\OneDrive\Desktop\ipl-ticket-booking\ipl-api-gateway\src\main\java\com\ipl\gateway\security\JwtAuthenticationManager.java
+C:\Users\ashok\OneDrive\Desktop\ipl-ticket-booking\ipl-api-gateway\src\main\java\com\ipl\gateway\security\JwtServerAuthenticationConverter.java
+C:\Users\ashok\OneDrive\Desktop\ipl-ticket-booking\ipl-api-gateway\src\main\java\com\ipl\gateway\security\RawJwtAuthenticationToken.java

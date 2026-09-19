@@ -1,0 +1,15 @@
+com\ipl\gateway\config\GatewayRoutesConfig.class
+com\ipl\gateway\config\LoggingGlobalFilter.class
+com\ipl\gateway\security\GatewayAccessDeniedHandler.class
+com\ipl\gateway\config\ServiceUrlProperties.class
+com\ipl\gateway\security\GatewayErrorResponseWriter.class
+com\ipl\gateway\security\JwtServerAuthenticationConverter.class
+com\ipl\gateway\ApiGatewayApplication.class
+com\ipl\gateway\config\SecurityConfig.class
+com\ipl\gateway\config\AppCorsProperties.class
+com\ipl\gateway\config\CorsConfig.class
+com\ipl\gateway\dto\ErrorResponse.class
+com\ipl\gateway\security\GatewayJwtProperties.class
+com\ipl\gateway\security\JwtAuthenticationManager.class
+com\ipl\gateway\security\RawJwtAuthenticationToken.class
+com\ipl\gateway\security\GatewayAuthenticationEntryPoint.class
