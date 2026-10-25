@@ -8,25 +8,28 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
+import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.time.Instant;
 import java.util.Date;
 import java.util.UUID;
 
 /**
  * Single source of truth for JWT creation, parsing and validation.
- * No other class should build or parse a JWT directly.
  *
- * Uses HMAC-SHA signing with a secret loaded from configuration
- * (jwt.secret -> JWT_SECRET env var) - never hardcoded.
+ * Uses asymmetric RS256 signing (RSA 2048-bit keypair). Auth Service signs
+ * tokens with its Private Key; API Gateway and downstream services only need
+ * the Public Key to verify tokens, preventing any downstream service from
+ * forging authentication credentials.
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class JwtService {
 
     public static final String TOKEN_TYPE_ACCESS = "access";
@@ -37,6 +40,16 @@ public class JwtService {
     private static final String CLAIM_TOKEN_TYPE = "type";
 
     private final JwtProperties jwtProperties;
+
+    private PrivateKey privateKey;
+    private PublicKey publicKey;
+
+    @PostConstruct
+    public void initKeys() {
+        this.privateKey = RsaKeyUtils.parsePrivateKey(jwtProperties.getPrivateKey());
+        this.publicKey = RsaKeyUtils.parsePublicKey(jwtProperties.getPublicKey());
+        log.info("Initialized RSA RS256 keys for Auth Service");
+    }
 
     public String generateAccessToken(Long userId, String email, Role role) {
         return buildToken(userId, email, role, TOKEN_TYPE_ACCESS,
@@ -50,15 +63,13 @@ public class JwtService {
 
     /**
      * Parses the token, verifies signature and expiration, and confirms the
-     * token's "type" claim matches {@code expectedType}. Callers must never
-     * skip this type check - it's what stops a refresh token being used to
-     * authenticate a normal API request, and vice versa.
+     * token's "type" claim matches {@code expectedType}.
      */
     public Claims parseAndValidate(String token, String expectedType) {
         Claims claims;
         try {
             claims = Jwts.parser()
-                    .verifyWith(signingKey())
+                    .verifyWith(publicKey)
                     .build()
                     .parseSignedClaims(token)
                     .getPayload();
@@ -92,6 +103,10 @@ public class JwtService {
         return claims.getId();
     }
 
+    public PublicKey getPublicKey() {
+        return publicKey;
+    }
+
     private String buildToken(Long userId, String email, Role role, String type, long expirationMillis, String jti) {
         Instant now = Instant.now();
         return Jwts.builder()
@@ -102,11 +117,7 @@ public class JwtService {
                 .claim(CLAIM_TOKEN_TYPE, type)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plusMillis(expirationMillis)))
-                .signWith(signingKey())
+                .signWith(privateKey, Jwts.SIG.RS256)
                 .compact();
-    }
-
-    private SecretKey signingKey() {
-        return Keys.hmacShaKeyFor(jwtProperties.getSecret().getBytes(StandardCharsets.UTF_8));
     }
 }

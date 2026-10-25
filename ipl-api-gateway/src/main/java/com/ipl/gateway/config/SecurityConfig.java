@@ -50,6 +50,7 @@ public class SecurityConfig {
     public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
         AuthenticationWebFilter authenticationWebFilter = new AuthenticationWebFilter(jwtAuthenticationManager);
         authenticationWebFilter.setServerAuthenticationConverter(jwtServerAuthenticationConverter);
+        authenticationWebFilter.setSecurityContextRepository(NoOpServerSecurityContextRepository.getInstance());
         // A token that IS present but fails validation (bad signature, expired,
         // wrong type) must also produce our 401 JSON shape, not Spring's default.
         authenticationWebFilter.setAuthenticationFailureHandler(
@@ -66,6 +67,9 @@ public class SecurityConfig {
                         // /auth/** prefix - GatewayRoutesConfig rewrites this to the
                         // real /api/auth/** controller path only when forwarding.
                         .pathMatchers(HttpMethod.POST, "/auth/login", "/auth/register", "/auth/refresh").permitAll()
+                        .pathMatchers(HttpMethod.GET, "/auth/public-key").permitAll()
+                        .pathMatchers("/actuator/**").permitAll()
+                        .pathMatchers(HttpMethod.GET, "/orders/inventory/**").permitAll()
 
                         // Event Service - coarse-grained role rules (fine-grained
                         // authorization belongs inside Event Service itself)
@@ -75,9 +79,7 @@ public class SecurityConfig {
                         .pathMatchers(HttpMethod.PATCH, "/events/**").hasAnyRole("FRANCHISE", "ADMIN")
                         .pathMatchers(HttpMethod.DELETE, "/events/**").hasRole("ADMIN")
 
-                        // Order Service - just requires authentication; role-specific
-                        // rules (USER manages own orders, ADMIN administrative ops)
-                        // belong inside Order Service.
+                        // Order Service - requires authentication (except /orders/inventory/** above)
                         .pathMatchers("/orders/**").authenticated()
 
                         // Everything else - e.g. /auth/logout, /auth/me - requires auth

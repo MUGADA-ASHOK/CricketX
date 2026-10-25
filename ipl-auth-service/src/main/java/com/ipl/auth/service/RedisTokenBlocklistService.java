@@ -17,6 +17,7 @@ import java.time.Duration;
  */
 @Service
 @RequiredArgsConstructor
+@lombok.extern.slf4j.Slf4j
 public class RedisTokenBlocklistService implements TokenBlocklistService {
 
     private static final String KEY_PREFIX = "blacklist:access:";
@@ -29,11 +30,20 @@ public class RedisTokenBlocklistService implements TokenBlocklistService {
             // Token is already expired/about to expire - nothing to blocklist.
             return;
         }
-        redisTemplate.opsForValue().set(KEY_PREFIX + jti, "true", Duration.ofMillis(ttlMillis));
+        try {
+            redisTemplate.opsForValue().set(KEY_PREFIX + jti, "true", Duration.ofMillis(ttlMillis));
+        } catch (Exception ex) {
+            log.warn("Redis unavailable for blocklist storage (jti={}): {}", jti, ex.getMessage());
+        }
     }
 
     @Override
     public boolean isBlocklisted(String jti) {
-        return Boolean.TRUE.equals(redisTemplate.hasKey(KEY_PREFIX + jti));
+        try {
+            return Boolean.TRUE.equals(redisTemplate.hasKey(KEY_PREFIX + jti));
+        } catch (Exception ex) {
+            log.warn("Redis unavailable for blocklist check (jti={}): {}", jti, ex.getMessage());
+            return false;
+        }
     }
 }

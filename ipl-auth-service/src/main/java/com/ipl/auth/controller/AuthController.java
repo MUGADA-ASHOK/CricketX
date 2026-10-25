@@ -8,6 +8,7 @@ import com.ipl.auth.dto.response.ApiResponse;
 import com.ipl.auth.dto.response.AuthResponse;
 import com.ipl.auth.dto.response.UserResponse;
 import com.ipl.auth.exception.InvalidTokenException;
+import com.ipl.auth.security.JwtService;
 import com.ipl.auth.security.UserPrincipal;
 import com.ipl.auth.service.AuthService;
 import jakarta.validation.Valid;
@@ -26,12 +27,24 @@ public class AuthController {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final AuthService authService;
+    private final JwtService jwtService;
 
     @PostMapping("/register")
     public ResponseEntity<ApiResponse<UserResponse>> register(@Valid @RequestBody RegisterRequest request) {
         UserResponse user = authService.register(request);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("Registration successful", user));
+    }
+
+    /**
+     * BCCI Admin endpoint to register Franchise representative accounts.
+     */
+    @PostMapping("/franchise/register")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<UserResponse>> registerFranchise(@Valid @RequestBody RegisterRequest request) {
+        UserResponse user = authService.registerFranchise(request);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success("Franchise account created successfully", user));
     }
 
     @PostMapping("/login")
@@ -86,6 +99,12 @@ public class AuthController {
     @PreAuthorize("hasAnyRole('ADMIN','FRANCHISE','USER')")
     public ResponseEntity<ApiResponse<String>> userTest() {
         return ResponseEntity.ok(ApiResponse.success("User access granted", "OK"));
+    }
+
+    @GetMapping("/public-key")
+    public ResponseEntity<ApiResponse<String>> getPublicKey() {
+        return ResponseEntity.ok(ApiResponse.success("Public Key", 
+                java.util.Base64.getEncoder().encodeToString(jwtService.getPublicKey().getEncoded())));
     }
 
     private String extractBearerToken(String header) {

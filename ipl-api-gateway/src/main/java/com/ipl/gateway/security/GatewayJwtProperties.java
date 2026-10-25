@@ -6,10 +6,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 /**
- * Binds jwt.secret (JWT_SECRET env var). This MUST be the exact same
- * value configured on ipl-auth-service - the Gateway validates the same
- * HMAC-signed access tokens Auth Service issues, it does not have (or
- * need) its own independent JWT configuration.
+ * Binds jwt.public-key (JWT_PUBLIC_KEY env var). Gateway only requires
+ * the RSA Public Key to verify tokens issued by ipl-auth-service.
  */
 @Component
 @ConfigurationProperties(prefix = "jwt")
@@ -17,5 +15,5 @@ import org.springframework.stereotype.Component;
 @Setter
 public class GatewayJwtProperties {
 
-    private String secret;
+    private String publicKey;
 }

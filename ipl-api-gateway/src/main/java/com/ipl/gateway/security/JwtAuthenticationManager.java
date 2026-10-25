@@ -3,8 +3,9 @@ package com.ipl.gateway.security;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.ReactiveAuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -15,28 +16,18 @@ import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
-import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
+import java.security.PublicKey;
 import java.util.List;
 
 /**
- * Validates access tokens issued by ipl-auth-service.
+ * Validates access tokens issued by ipl-auth-service using the RSA Public Key.
  *
- * Mirrors JwtService#parseAndValidate in ipl-auth-service (same jjwt
- * library and version, same claim names: "type", "role", "email") rather
- * than using Spring Security's OAuth2 Resource Server JWT decoder - see
- * SecurityConfig for why. Signature, structure and expiration are all
- * verified by jjwt's parser; a mismatched signature or an expired token
- * both surface as a JwtException here, which is translated into a
- * BadCredentialsException so it flows through Spring Security's normal
- * authentication-failure handling (-> 401 via GatewayAuthenticationEntryPoint).
- *
- * A refresh token (type=refresh) is explicitly rejected here - only an
- * access token can authenticate a request to Event/Order services, exactly
- * as ipl-auth-service's own JwtAuthenticationFilter enforces internally.
+ * Signature, structure and expiration are verified with the RSA Public Key (RS256).
+ * Only access tokens with type=access are accepted.
  */
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class JwtAuthenticationManager implements ReactiveAuthenticationManager {
 
     private static final String CLAIM_TOKEN_TYPE = "type";
@@ -45,6 +36,13 @@ public class JwtAuthenticationManager implements ReactiveAuthenticationManager {
     private static final String TOKEN_TYPE_ACCESS = "access";
 
     private final GatewayJwtProperties jwtProperties;
+    private PublicKey publicKey;
+
+    @PostConstruct
+    public void init() {
+        this.publicKey = RsaKeyUtils.parsePublicKey(jwtProperties.getPublicKey());
+        log.info("Initialized RSA RS256 public key verifier for API Gateway");
+    }
 
     @Override
     public Mono<Authentication> authenticate(Authentication authentication) {
@@ -57,7 +55,7 @@ public class JwtAuthenticationManager implements ReactiveAuthenticationManager {
         Claims claims;
         try {
             claims = Jwts.parser()
-                    .verifyWith(signingKey())
+                    .verifyWith(publicKey)
                     .build()
                     .parseSignedClaims(token)
                     .getPayload();
@@ -78,13 +76,6 @@ public class JwtAuthenticationManager implements ReactiveAuthenticationManager {
         String email = claims.get(CLAIM_EMAIL, String.class);
         List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role));
 
-        UsernamePasswordAuthenticationToken authenticated =
-                new UsernamePasswordAuthenticationToken(email, null, authorities);
-        authenticated.setAuthenticated(true);
-        return authenticated;
-    }
-
-    private SecretKey signingKey() {
-        return Keys.hmacShaKeyFor(jwtProperties.getSecret().getBytes(StandardCharsets.UTF_8));
+        return new UsernamePasswordAuthenticationToken(email, null, authorities);
     }
 }

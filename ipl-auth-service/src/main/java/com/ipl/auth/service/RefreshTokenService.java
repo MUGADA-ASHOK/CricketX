@@ -26,13 +26,21 @@ import java.util.UUID;
  * hash, never the raw token), rotating on every /refresh call, and
  * detecting reuse of an already-rotated token.
  */
+import org.springframework.data.redis.core.StringRedisTemplate;
+import lombok.extern.slf4j.Slf4j;
+import java.time.Duration;
+
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class RefreshTokenService {
+
+    private static final String REDIS_REFRESH_PREFIX = "session:refresh:";
 
     private final RefreshTokenRepository refreshTokenRepository;
     private final JwtService jwtService;
     private final JwtProperties jwtProperties;
+    private final StringRedisTemplate redisTemplate;
 
     public record TokenPair(String accessToken, String refreshToken, User user) {
     }
@@ -96,6 +104,14 @@ public class RefreshTokenService {
                 .build();
         refreshTokenRepository.save(newRecord);
 
+        try {
+            redisTemplate.delete(REDIS_REFRESH_PREFIX + jti);
+            redisTemplate.opsForValue().set(REDIS_REFRESH_PREFIX + newJti, user.getId().toString(),
+                    Duration.ofMillis(jwtProperties.getRefreshTokenExpiration()));
+        } catch (Exception ex) {
+            log.warn("Redis unavailable during token rotation: {}", ex.getMessage());
+        }
+
         String newAccessToken = jwtService.generateAccessToken(user.getId(), user.getEmail(), user.getRole());
         return new TokenPair(newAccessToken, newRawRefreshToken, user);
     }
@@ -109,11 +125,17 @@ public class RefreshTokenService {
     public void revokeSession(String rawRefreshToken) {
         try {
             Claims claims = jwtService.parseAndValidate(rawRefreshToken, JwtService.TOKEN_TYPE_REFRESH);
-            refreshTokenRepository.findByJti(jwtService.extractJti(claims))
+            String jti = jwtService.extractJti(claims);
+            refreshTokenRepository.findByJti(jti)
                     .ifPresent(rt -> {
                         rt.setRevokedAt(Instant.now());
                         refreshTokenRepository.save(rt);
                     });
+            try {
+                redisTemplate.delete(REDIS_REFRESH_PREFIX + jti);
+            } catch (Exception ex) {
+                log.warn("Redis unavailable during session revocation: {}", ex.getMessage());
+            }
         } catch (RuntimeException ex) {
             // Already invalid/expired - nothing meaningful left to revoke.
         }
@@ -130,6 +152,14 @@ public class RefreshTokenService {
                 .expiresAt(Instant.now().plusMillis(jwtProperties.getRefreshTokenExpiration()))
                 .build();
         refreshTokenRepository.save(entity);
+
+        try {
+            redisTemplate.opsForValue().set(REDIS_REFRESH_PREFIX + jti, user.getId().toString(),
+                    Duration.ofMillis(jwtProperties.getRefreshTokenExpiration()));
+        } catch (Exception ex) {
+            log.warn("Redis unavailable during token issue: {}", ex.getMessage());
+        }
+
         return rawToken;
     }
 

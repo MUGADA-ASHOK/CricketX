@@ -3,35 +3,34 @@ package com.ipl.event.dto.stadium;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 @Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class CreateStadiumRequest {
 
-    @NotBlank
-    @Size(max = 150)
+    @NotBlank(message = "Stadium name is required")
     private String name;
 
-    @NotBlank
-    @Size(max = 100)
+    @NotBlank(message = "City is required")
     private String city;
 
-    @Size(max = 100)
     private String state;
 
-    @Size(max = 100)
     private String country;
 
-    @Size(max = 300)
     private String address;
 
-    @NotNull
-    @Min(1)
+    @NotNull(message = "Capacity is required")
+    @Min(value = 1000, message = "Capacity must be at least 1,000")
     private Integer capacity;
 
     private String description;
 
-    @Size(max = 500)
     private String imageUrl;
 }

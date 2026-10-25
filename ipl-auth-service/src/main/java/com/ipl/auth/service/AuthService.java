@@ -61,6 +61,31 @@ public class AuthService {
         return UserResponse.fromEntity(saved);
     }
 
+    /**
+     * BCCI Admin registration for Franchise accounts. Assigns Role.FRANCHISE.
+     */
+    @Transactional
+    public UserResponse registerFranchise(RegisterRequest request) {
+        if (userRepository.existsByEmail(request.email())) {
+            throw new EmailAlreadyExistsException("An account with this email already exists");
+        }
+        if (userRepository.existsByUsername(request.username())) {
+            throw new UsernameAlreadyExistsException("This username is already taken");
+        }
+
+        User user = User.builder()
+                .username(request.username())
+                .email(request.email())
+                .password(passwordEncoder.encode(request.password()))
+                .role(Role.FRANCHISE)
+                .enabled(true)
+                .accountNonLocked(true)
+                .build();
+
+        User saved = userRepository.save(user);
+        return UserResponse.fromEntity(saved);
+    }
+
     @Transactional
     public AuthResponse login(LoginRequest request) {
         Authentication authentication = authenticationManager.authenticate(

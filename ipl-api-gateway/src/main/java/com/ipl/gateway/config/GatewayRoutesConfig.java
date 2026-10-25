@@ -7,17 +7,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Static routing configuration - no service discovery at this stage.
- *
- * Auth Service route rewrites the public /auth/** prefix to the real
- * controller base path /api/auth/** before forwarding. This keeps the
- * public API exactly as specified (/auth/**) without requiring any change
- * to the already-implemented Auth Service, whose actual controllers live
- * under /api/auth/**.
- *
- * Event/Order routes forward the path unchanged, since neither service is
- * implemented yet - their controllers should be built to match /events/**
- * and /orders/** directly.
+ * Static routing configuration:
+ * Rewrites public prefixes (/auth/**, /events/**, /orders/**) to the real
+ * controller base paths (/api/auth/**, /api/events/**, /api/orders/**)
+ * before forwarding downstream.
  */
 @Configuration
 @RequiredArgsConstructor
@@ -32,8 +25,10 @@ public class GatewayRoutesConfig {
                         .filters(f -> f.rewritePath("/auth/(?<segment>.*)", "/api/auth/${segment}"))
                         .uri(serviceUrls.getAuthUrl()))
                 .route("ipl-event-service", r -> r.path("/events/**")
+                        .filters(f -> f.rewritePath("/events/(?<segment>.*)", "/api/events/${segment}"))
                         .uri(serviceUrls.getEventUrl()))
                 .route("ipl-order-service", r -> r.path("/orders/**")
+                        .filters(f -> f.rewritePath("/orders/(?<segment>.*)", "/api/orders/${segment}"))
                         .uri(serviceUrls.getOrderUrl()))
                 .build();
     }
