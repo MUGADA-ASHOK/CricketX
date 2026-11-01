@@ -20,6 +20,8 @@ public class CreateOrderRequest {
     @NotNull(message = "Match ID is required")
     private Long matchId;
 
+    private String idempotencyKey;
+
     @NotEmpty(message = "At least one ticket category item is required")
     @Valid
     private List<OrderItemRequest> items;

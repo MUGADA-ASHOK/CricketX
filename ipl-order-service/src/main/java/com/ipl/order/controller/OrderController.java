@@ -25,12 +25,17 @@ public class OrderController {
 
     /**
      * Phase 1 of Two-Phase Booking: Hold seats for 10 minutes.
+     * Supports Idempotency-Key header or request body field to avoid duplicate seat holds.
      */
     @PostMapping("/reserve")
     public ResponseEntity<ApiResponse<OrderResponse>> reserveTickets(
             @AuthenticationPrincipal AuthenticatedUser user,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKeyHeader,
             @Valid @RequestBody CreateOrderRequest request) {
-        OrderResponse response = orderService.reserveTickets(request, user);
+        String idempotencyKey = (idempotencyKeyHeader != null && !idempotencyKeyHeader.isBlank())
+                ? idempotencyKeyHeader
+                : request.getIdempotencyKey();
+        OrderResponse response = orderService.reserveTickets(request, user, idempotencyKey);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("Tickets held successfully. Please complete payment within 10 minutes.", response));
     }
@@ -98,5 +103,57 @@ public class OrderController {
             @PathVariable Long matchId) {
         List<InventoryResponse> inventory = orderService.getInventoryForMatch(matchId);
         return ResponseEntity.ok(ApiResponse.success("Match ticket inventory", inventory));
+    }
+
+    /**
+     * Live Seat Map: Get layout of physical seats and their real-time statuses (AVAILABLE, HELD, BOOKED).
+     */
+    @GetMapping("/matches/{matchId}/seats")
+    public ResponseEntity<ApiResponse<List<com.ipl.order.dto.response.SeatResponse>>> getSeatMap(
+            @PathVariable Long matchId) {
+        List<com.ipl.order.dto.response.SeatResponse> seats = orderService.getSeatsForMatch(matchId);
+        return ResponseEntity.ok(ApiResponse.success("Seat layout map", seats));
+    }
+
+    /**
+     * Specific Seat Allocation: Hold specific chosen seats for 10 minutes.
+     */
+    @PostMapping("/reserve-seats")
+    public ResponseEntity<ApiResponse<OrderResponse>> reserveSpecificSeats(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKeyHeader,
+            @Valid @RequestBody com.ipl.order.dto.request.ReserveSeatsRequest request) {
+        if (idempotencyKeyHeader != null && !idempotencyKeyHeader.isBlank()) {
+            request = com.ipl.order.dto.request.ReserveSeatsRequest.builder()
+                    .matchId(request.getMatchId())
+                    .seatIds(request.getSeatIds())
+                    .idempotencyKey(idempotencyKeyHeader)
+                    .build();
+        }
+        OrderResponse response = orderService.reserveSpecificSeats(request, user);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success("Seats held successfully for 10 minutes.", response));
+    }
+
+    /**
+     * Digital Ticket Wallet: View all digital tickets with their QR codes.
+     */
+    @GetMapping("/tickets/my-tickets")
+    public ResponseEntity<ApiResponse<List<com.ipl.order.dto.response.TicketResponse>>> getMyTickets(
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        List<com.ipl.order.dto.response.TicketResponse> tickets = orderService.getMyTickets(user);
+        return ResponseEntity.ok(ApiResponse.success("My digital tickets", tickets));
+    }
+
+    /**
+     * Turnstile Gate Validation:
+     * Scans QR Code at stadium gate, verifies cryptographic HMAC signature,
+     * and prevents duplicate entries.
+     */
+    @PostMapping("/tickets/validate-turnstile")
+    public ResponseEntity<ApiResponse<com.ipl.order.dto.response.TurnstileValidationResponse>> validateTurnstile(
+            @Valid @RequestBody com.ipl.order.dto.request.TurnstileValidationRequest request) {
+        com.ipl.order.dto.response.TurnstileValidationResponse response = orderService.validateTurnstile(request);
+        return ResponseEntity.ok(ApiResponse.success("Turnstile scan result: " + response.getResult(), response));
     }
 }

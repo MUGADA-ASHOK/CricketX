@@ -30,6 +30,9 @@ public class GatewayRoutesConfig {
                 .route("ipl-order-service", r -> r.path("/orders/**")
                         .filters(f -> f.rewritePath("/orders/(?<segment>.*)", "/api/orders/${segment}"))
                         .uri(serviceUrls.getOrderUrl()))
+                .route("ipl-notification-service", r -> r.path("/notifications/**")
+                        .filters(f -> f.rewritePath("/notifications/(?<segment>.*)", "/api/notifications/${segment}"))
+                        .uri(serviceUrls.getNotificationUrl()))
                 .build();
     }
 }

@@ -73,6 +73,11 @@ public class MatchService {
     public MatchResponse approveMatch(Long matchId) {
         Match match = getMatchOrThrow(matchId);
 
+        // Idempotency check: If match is already approved, return existing match safely
+        if (match.getStatus() == MatchStatus.APPROVED || match.getStatus() == MatchStatus.TICKETS_OPEN) {
+            return toResponse(match);
+        }
+
         if (match.getStatus() != MatchStatus.WAITING_FOR_APPROVAL) {
             throw new InvalidMatchStateException(
                     "Match must be WAITING_FOR_APPROVAL to approve - current status: " + match.getStatus());

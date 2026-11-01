@@ -82,6 +82,9 @@ public class SecurityConfig {
                         // Order Service - requires authentication (except /orders/inventory/** above)
                         .pathMatchers("/orders/**").authenticated()
 
+                        // Notification Service - requires authentication
+                        .pathMatchers("/notifications/**").authenticated()
+
                         // Everything else - e.g. /auth/logout, /auth/me - requires auth
                         .anyExchange().authenticated()
                 )

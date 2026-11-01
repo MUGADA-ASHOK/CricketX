@@ -19,4 +19,5 @@ public class ServiceUrlProperties {
     private String authUrl;
     private String eventUrl;
     private String orderUrl;
+    private String notificationUrl;
 }

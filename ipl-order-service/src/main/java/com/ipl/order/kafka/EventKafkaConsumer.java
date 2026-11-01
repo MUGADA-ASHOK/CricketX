@@ -19,6 +19,7 @@ public class EventKafkaConsumer {
 
     private final ObjectMapper objectMapper;
     private final TicketInventoryRepository ticketInventoryRepository;
+    private final com.ipl.order.service.RedisFlashSaleService redisFlashSaleService;
 
     @KafkaListener(topics = "ipl.match.approved", groupId = "${spring.kafka.consumer.group-id:ipl-order-group}")
     @Transactional
@@ -31,6 +32,12 @@ public class EventKafkaConsumer {
             // Initialize standard baseline inventory if not already present
             if (ticketInventoryRepository.findByMatchId(matchId).isEmpty()) {
                 initDefaultInventory(matchId);
+            } else {
+                // Ensure Redis in-memory stock is primed for flash sales
+                var invs = ticketInventoryRepository.findByMatchId(matchId);
+                for (TicketInventory inv : invs) {
+                    redisFlashSaleService.syncStock(matchId, inv.getTicketCategoryId(), inv.getAvailableQuantity());
+                }
             }
         } catch (Exception ex) {
             log.error("Failed to process MatchApprovedEvent from Kafka: {}", ex.getMessage());
@@ -44,6 +51,12 @@ public class EventKafkaConsumer {
             JsonNode node = objectMapper.readTree(message);
             Long matchId = node.get("matchId").asLong();
             log.info("Received MatchTicketsOpenedEvent from Kafka for matchId={}. Ticket sales live!", matchId);
+
+            // Prime Redis memory with exact available inventory for the live drop
+            var invs = ticketInventoryRepository.findByMatchId(matchId);
+            for (TicketInventory inv : invs) {
+                redisFlashSaleService.syncStock(matchId, inv.getTicketCategoryId(), inv.getAvailableQuantity());
+            }
         } catch (Exception ex) {
             log.error("Failed to process MatchTicketsOpenedEvent: {}", ex.getMessage());
         }
@@ -80,6 +93,12 @@ public class EventKafkaConsumer {
         ticketInventoryRepository.save(vip);
         ticketInventoryRepository.save(premium);
         ticketInventoryRepository.save(general);
-        log.info("Initialized local ticket inventory replica for matchId={}", matchId);
+
+        // Preload Redis RAM
+        redisFlashSaleService.syncStock(matchId, 1L, 500);
+        redisFlashSaleService.syncStock(matchId, 2L, 2500);
+        redisFlashSaleService.syncStock(matchId, 3L, 25000);
+
+        log.info("Initialized local ticket inventory replica and primed Redis stock for matchId={}", matchId);
     }
 }

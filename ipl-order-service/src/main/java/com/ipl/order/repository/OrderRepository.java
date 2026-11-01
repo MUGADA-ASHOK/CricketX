@@ -16,5 +16,9 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     Optional<Order> findByOrderNumber(String orderNumber);
 
+    Optional<Order> findByUserIdAndIdempotencyKey(Long userId, String idempotencyKey);
+
+    boolean existsByPaymentReferenceAndStatus(String paymentReference, OrderStatus status);
+
     List<Order> findByStatusAndExpiresAtLessThanEqual(OrderStatus status, LocalDateTime now);
 }

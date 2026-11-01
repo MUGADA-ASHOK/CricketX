@@ -15,7 +15,8 @@ import java.util.List;
         indexes = {
                 @Index(name = "idx_orders_user_id", columnList = "user_id"),
                 @Index(name = "idx_orders_match_id", columnList = "match_id"),
-                @Index(name = "idx_orders_status_expires", columnList = "status, expires_at")
+                @Index(name = "idx_orders_status_expires", columnList = "status, expires_at"),
+                @Index(name = "idx_orders_user_idempotency", columnList = "user_id, idempotency_key")
         }
 )
 @Getter
@@ -31,6 +32,9 @@ public class Order {
 
     @Column(name = "order_number", nullable = false, unique = true, length = 64)
     private String orderNumber;
+
+    @Column(name = "idempotency_key", length = 100)
+    private String idempotencyKey;
 
     @Column(name = "user_id", nullable = false)
     private Long userId;

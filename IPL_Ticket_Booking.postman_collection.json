@@ -1,8 +1,8 @@
 {
   "info": {
-    "_postman_id": "ipl-ticket-booking-v2",
+    "_postman_id": "ipl-ticket-booking-v3-production",
     "name": "IPL Ticket Booking System - API Gateway (8090)",
-    "description": "Complete End-to-End Postman Collection for testing all microservices through the API Gateway (Port 8090).\nFeatures:\n- BCCI Admin & Fan Authentication\n- Franchise User Registration & Login\n- Stadium & Franchise Creation\n- Match Scheduling, Stadium Configuration & BCCI Approval\n- Two-Phase Ticket Hold (10-minute hold with Pessimistic Locking)\n- Razorpay Payment Gateway integration\n- Redis TTL Token Blacklist & Session Management\n- Kafka Event Streaming",
+    "description": "Production-Ready End-to-End Automated Test Collection for IPL Ticket Booking System.\n\nFeatures:\n- Fully dynamic ID and token propagation across all 4 microservices via API Gateway (Port 8090)\n- BCCI Admin, Franchise, and Fan role-based authentication\n- Token session management and Redis TTL blocklist\n- Stadium, Franchise, and Match fixture configuration & BCCI approval\n- Two-Phase Ticket Hold with Idempotency Key protection\n- High-concurrency flash sale engine with Redis atomic inventory\n- Seat Map & Specific Seat Allocation\n- Razorpay Payment Gateway integration with dynamic HMAC SHA256 cryptographic signature generation\n- Digital QR Ticket generation and Stadium Turnstile Gate validation\n- Kafka-driven In-System Notification Center",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -17,6 +17,21 @@
       "type": "string"
     },
     {
+      "key": "adminRefreshToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "franchiseUserId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "rcbUserId",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "franchiseToken",
       "value": "",
       "type": "string"
@@ -27,37 +42,77 @@
       "type": "string"
     },
     {
-      "key": "refreshToken",
+      "key": "userRefreshToken",
       "value": "",
       "type": "string"
     },
     {
       "key": "stadiumId",
-      "value": "1",
+      "value": "",
       "type": "string"
     },
     {
       "key": "homeFranchiseId",
-      "value": "1",
+      "value": "",
       "type": "string"
     },
     {
       "key": "awayFranchiseId",
-      "value": "2",
+      "value": "",
       "type": "string"
     },
     {
       "key": "matchId",
-      "value": "1",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "ticketCategoryId",
+      "value": "",
       "type": "string"
     },
     {
       "key": "orderId",
-      "value": "1",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "cancelOrderId",
+      "value": "",
       "type": "string"
     },
     {
       "key": "razorpayOrderId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "razorpayPaymentId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "razorpaySignature",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "seatId1",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "seatId2",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "ticketQrData",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "notificationId",
       "value": "",
       "type": "string"
     }
@@ -67,17 +122,21 @@
       "name": "1. Authentication (Auth Service)",
       "item": [
         {
-          "name": "1.1 Login as BCCI Admin",
+          "name": "1.1 Login as BCCI SuperAdmin",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
                   "var jsonData = pm.response.json();",
+                  "pm.test('Login Successful (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(jsonData.success).to.be.true;",
+                  "});",
                   "if (jsonData.data && jsonData.data.accessToken) {",
                   "    pm.collectionVariables.set('adminToken', jsonData.data.accessToken);",
-                  "    pm.collectionVariables.set('refreshToken', jsonData.data.refreshToken);",
-                  "    console.log('Admin Token stored successfully');",
+                  "    pm.collectionVariables.set('adminRefreshToken', jsonData.data.refreshToken);",
+                  "    console.log('BCCI Admin Token stored successfully');",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -101,11 +160,29 @@
               "host": ["{{baseUrl}}"],
               "path": ["auth", "login"]
             },
-            "description": "Logs in as the auto-seeded BCCI SuperAdmin. Automatically captures the accessToken into {{adminToken}} and refreshToken into {{refreshToken}}."
+            "description": "Logs in as the auto-seeded BCCI SuperAdmin. Dynamically stores adminToken and adminRefreshToken."
           }
         },
         {
-          "name": "1.2 Register Franchise Account (BCCI Admin Only)",
+          "name": "1.2 Register Home Franchise Account (CSK - BCCI Admin Only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.test('CSK Franchise Registered or Exists', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201, 409]);",
+                  "});",
+                  "if (jsonData.data && jsonData.data.id) {",
+                  "    pm.collectionVariables.set('franchiseUserId', jsonData.data.id);",
+                  "    console.log('CSK Franchise User ID captured:', jsonData.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -127,19 +204,70 @@
               "host": ["{{baseUrl}}"],
               "path": ["auth", "franchise", "register"]
             },
-            "description": "BCCI Admin registers an official franchise user login with ROLE_FRANCHISE. Returns the generated userId."
+            "description": "BCCI Admin registers the official CSK Franchise User account with ROLE_FRANCHISE. Dynamically captures franchiseUserId."
           }
         },
         {
-          "name": "1.3 Login as Franchise User (RCB)",
+          "name": "1.3 Register Away Franchise Account (RCB - BCCI Admin Only)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
                   "var jsonData = pm.response.json();",
+                  "pm.test('RCB Franchise Registered or Exists', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201, 409]);",
+                  "});",
+                  "if (jsonData.data && jsonData.data.id) {",
+                  "    pm.collectionVariables.set('rcbUserId', jsonData.data.id);",
+                  "    console.log('RCB Franchise User ID captured:', jsonData.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"rcb_admin\",\n  \"email\": \"admin@rcb.com\",\n  \"password\": \"Rcb@2026!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/franchise/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "franchise", "register"]
+            },
+            "description": "BCCI Admin registers the official RCB Franchise User account. Dynamically captures rcbUserId."
+          }
+        },
+        {
+          "name": "1.4 Login as Franchise User (CSK)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Franchise Login Successful (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(jsonData.data.accessToken).to.not.be.empty;",
+                  "});",
                   "if (jsonData.data && jsonData.data.accessToken) {",
                   "    pm.collectionVariables.set('franchiseToken', jsonData.data.accessToken);",
+                  "    if (jsonData.data.user && jsonData.data.user.id) {",
+                  "        pm.collectionVariables.set('franchiseUserId', jsonData.data.user.id);",
+                  "    }",
                   "    console.log('Franchise Token stored successfully');",
                   "}"
                 ],
@@ -157,18 +285,31 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"admin@rcb.com\",\n  \"password\": \"Rcb@2026!\"\n}"
+              "raw": "{\n  \"email\": \"admin@csk.com\",\n  \"password\": \"Csk@2026!\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/auth/login",
               "host": ["{{baseUrl}}"],
               "path": ["auth", "login"]
             },
-            "description": "Logs in as the RCB Franchise User. Captures the accessToken into {{franchiseToken}}."
+            "description": "Logs in as the registered CSK Franchise User. Captures franchiseToken for stadium and match configuration."
           }
         },
         {
-          "name": "1.4 Register Fan User",
+          "name": "1.5 Register Fan User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Fan Registered or Already Exists', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201, 409]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -179,27 +320,32 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"virat_fan\",\n  \"email\": \"fan@gmail.com\",\n  \"password\": \"Password@123\"\n}"
+              "raw": "{\n  \"username\": \"dhoni_fan\",\n  \"email\": \"fan@gmail.com\",\n  \"password\": \"Password@123\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/auth/register",
               "host": ["{{baseUrl}}"],
               "path": ["auth", "register"]
             },
-            "description": "Public registration endpoint for fans. Always assigns the USER role."
+            "description": "Public registration endpoint for cricket fans. Always assigns ROLE_USER."
           }
         },
         {
-          "name": "1.5 Login as Fan User",
+          "name": "1.6 Login as Fan User",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
                   "var jsonData = pm.response.json();",
+                  "pm.test('Fan Login Successful (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(jsonData.data.accessToken).to.not.be.empty;",
+                  "});",
                   "if (jsonData.data && jsonData.data.accessToken) {",
                   "    pm.collectionVariables.set('userToken', jsonData.data.accessToken);",
-                  "    console.log('User Token stored successfully');",
+                  "    pm.collectionVariables.set('userRefreshToken', jsonData.data.refreshToken);",
+                  "    console.log('User Token and userRefreshToken stored successfully');",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -223,11 +369,25 @@
               "host": ["{{baseUrl}}"],
               "path": ["auth", "login"]
             },
-            "description": "Logs in as a fan user. Automatically sets {{userToken}}."
+            "description": "Logs in as a fan user. Dynamically captures userToken and userRefreshToken."
           }
         },
         {
-          "name": "1.6 Get Current User Profile (/auth/me)",
+          "name": "1.7 Get Current User Profile (/auth/me)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Profile Fetched Successfully (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().data.email).to.equal('fan@gmail.com');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "header": [
@@ -241,11 +401,30 @@
               "host": ["{{baseUrl}}"],
               "path": ["auth", "me"]
             },
-            "description": "Fetches profile info of the authenticated user."
+            "description": "Fetches profile info of the authenticated fan."
           }
         },
         {
-          "name": "1.7 Refresh Token (Redis TTL Token Session)",
+          "name": "1.8 Refresh Token Session (Redis TTL)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Token Refreshed Successfully (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(jsonData.data.accessToken).to.not.be.empty;",
+                  "});",
+                  "if (jsonData.data && jsonData.data.accessToken) {",
+                  "    pm.collectionVariables.set('userToken', jsonData.data.accessToken);",
+                  "    pm.collectionVariables.set('userRefreshToken', jsonData.data.refreshToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -256,44 +435,31 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+              "raw": "{\n  \"refreshToken\": \"{{userRefreshToken}}\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/auth/refresh",
               "host": ["{{baseUrl}}"],
               "path": ["auth", "refresh"]
             },
-            "description": "Exchanges a valid refresh token for a fresh access token. Backed by Redis TTL."
-          }
-        },
-        {
-          "name": "1.8 Logout (Revoke Tokens with Redis Blocklist)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{userToken}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/auth/logout",
-              "host": ["{{baseUrl}}"],
-              "path": ["auth", "logout"]
-            },
-            "description": "Logs out user, blacklisting access token in Redis and revoking the refresh token session."
+            "description": "Rotates refresh token and issues fresh access token backed by Redis TTL session."
           }
         },
         {
           "name": "1.9 Get RSA Public Key",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Public Key Returned (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "header": [],
@@ -302,7 +468,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["auth", "public-key"]
             },
-            "description": "Public endpoint to retrieve the RS256 Public Key."
+            "description": "Public endpoint to retrieve the RS256 RSA Public Key."
           }
         }
       ]
@@ -318,9 +484,12 @@
               "script": {
                 "exec": [
                   "var jsonData = pm.response.json();",
+                  "pm.test('Stadium Created Successfully (200 or 201)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
                   "if (jsonData.data && jsonData.data.id) {",
                   "    pm.collectionVariables.set('stadiumId', jsonData.data.id);",
-                  "    console.log('Stadium ID stored:', jsonData.data.id);",
+                  "    console.log('Stadium ID dynamically stored:', jsonData.data.id);",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -341,40 +510,66 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Eden Gardens\",\n  \"city\": \"Kolkata\",\n  \"state\": \"West Bengal\",\n  \"country\": \"India\",\n  \"address\": \"B.B.D. Bagh, Kolkata\",\n  \"capacity\": 68000,\n  \"description\": \"One of the most iconic cricket grounds in India\",\n  \"imageUrl\": \"https://images.unsplash.com/photo-1540747913346-19e32dc3e97e\"\n}"
+              "raw": "{\n  \"name\": \"M. A. Chidambaram Stadium\",\n  \"city\": \"Chennai\",\n  \"state\": \"Tamil Nadu\",\n  \"country\": \"India\",\n  \"address\": \"Chepauk, Chennai\",\n  \"capacity\": 50000,\n  \"description\": \"Historic Chepauk fortress of Chennai Super Kings\",\n  \"imageUrl\": \"https://images.unsplash.com/photo-1540747913346-19e32dc3e97e\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/events/stadiums",
               "host": ["{{baseUrl}}"],
               "path": ["events", "stadiums"]
             },
-            "description": "BCCI registers an official IPL stadium venue. Automatically populates all metadata and baseline ticket category tiers."
+            "description": "BCCI registers an official IPL stadium venue. Dynamically captures stadiumId into collection variables."
           }
         },
         {
           "name": "2.2 List All Stadiums",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Stadiums List Returned (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(jsonData.data).to.be.an('array');",
+                  "});",
+                  "if (!pm.collectionVariables.get('stadiumId') && jsonData.data.length > 0) {",
+                  "    pm.collectionVariables.set('stadiumId', jsonData.data[0].id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "GET",
-            "header": [],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/events/stadiums",
               "host": ["{{baseUrl}}"],
               "path": ["events", "stadiums"]
             },
-            "description": "Publicly lists all registered stadiums with capacities, cities, and status."
+            "description": "Lists all registered IPL stadiums."
           }
         },
         {
-          "name": "2.3 Register Franchise Team (BCCI Admin)",
+          "name": "2.3 Register Home Franchise Team (CSK - BCCI Admin)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
                   "var jsonData = pm.response.json();",
+                  "pm.test('Home Franchise Created or Exists', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201, 409]);",
+                  "});",
                   "if (jsonData.data && jsonData.data.id) {",
                   "    pm.collectionVariables.set('homeFranchiseId', jsonData.data.id);",
-                  "    console.log('Franchise ID stored:', jsonData.data.id);",
+                  "    console.log('Home Franchise ID stored:', jsonData.data.id);",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -395,40 +590,30 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"userId\": 2,\n  \"franchiseName\": \"Kolkata Knight Riders\",\n  \"teamCode\": \"KKR\",\n  \"shortName\": \"KKR\",\n  \"city\": \"Kolkata\",\n  \"description\": \"Official IPL franchise representing Kolkata\",\n  \"logoUrl\": \"https://images.unsplash.com/photo-1540747913346-19e32dc3e97e\",\n  \"contactEmail\": \"contact@kkr.in\",\n  \"contactPhone\": \"+91 98765 43210\",\n  \"homeStadiumId\": 1\n}"
+              "raw": "{\n  \"userId\": {{franchiseUserId}},\n  \"franchiseName\": \"Chennai Super Kings\",\n  \"teamCode\": \"CSK\",\n  \"shortName\": \"CSK\",\n  \"city\": \"Chennai\",\n  \"description\": \"5-time IPL Champions Chennai Super Kings\",\n  \"logoUrl\": \"https://images.unsplash.com/photo-1540747913346-19e32dc3e97e\",\n  \"contactEmail\": \"contact@csk.in\",\n  \"contactPhone\": \"+91 98765 43210\",\n  \"homeStadiumId\": {{stadiumId}}\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/events/franchises",
               "host": ["{{baseUrl}}"],
               "path": ["events", "franchises"]
             },
-            "description": "BCCI registers a new franchise team and links it to a stadium and franchise user account."
+            "description": "BCCI registers CSK franchise team using dynamic franchiseUserId and stadiumId. Captures homeFranchiseId."
           }
         },
         {
-          "name": "2.4 List All Franchises",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/events/franchises",
-              "host": ["{{baseUrl}}"],
-              "path": ["events", "franchises"]
-            },
-            "description": "Publicly lists all active IPL franchise teams."
-          }
-        },
-        {
-          "name": "2.5 Schedule Match (BCCI Admin)",
+          "name": "2.4 Register Away Franchise Team (RCB - BCCI Admin)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
                   "var jsonData = pm.response.json();",
-                  "if (jsonData.data && jsonData.data.matchId) {",
-                  "    pm.collectionVariables.set('matchId', jsonData.data.matchId);",
-                  "    console.log('Match ID stored:', jsonData.data.matchId);",
+                  "pm.test('Away Franchise Created or Exists', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201, 409]);",
+                  "});",
+                  "if (jsonData.data && jsonData.data.id) {",
+                  "    pm.collectionVariables.set('awayFranchiseId', jsonData.data.id);",
+                  "    console.log('Away Franchise ID stored:', jsonData.data.id);",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -449,18 +634,114 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"homeFranchiseId\": 1,\n  \"awayFranchiseId\": 2,\n  \"matchDateTime\": \"2027-04-10T19:30:00\"\n}"
+              "raw": "{\n  \"userId\": {{rcbUserId}},\n  \"franchiseName\": \"Royal Challengers Bengaluru\",\n  \"teamCode\": \"RCB\",\n  \"shortName\": \"RCB\",\n  \"city\": \"Bengaluru\",\n  \"description\": \"Official IPL franchise representing Bengaluru\",\n  \"logoUrl\": \"https://images.unsplash.com/photo-1540747913346-19e32dc3e97e\",\n  \"contactEmail\": \"contact@rcb.in\",\n  \"contactPhone\": \"+91 98765 43211\",\n  \"homeStadiumId\": {{stadiumId}}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/events/franchises",
+              "host": ["{{baseUrl}}"],
+              "path": ["events", "franchises"]
+            },
+            "description": "BCCI registers RCB franchise team using dynamic rcbUserId and stadiumId. Captures awayFranchiseId."
+          }
+        },
+        {
+          "name": "2.5 List All Franchises",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Franchises List Returned (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(jsonData.data).to.be.an('array');",
+                  "});",
+                  "if (jsonData.data.length >= 2) {",
+                  "    if (!pm.collectionVariables.get('homeFranchiseId')) pm.collectionVariables.set('homeFranchiseId', jsonData.data[0].id);",
+                  "    if (!pm.collectionVariables.get('awayFranchiseId')) pm.collectionVariables.set('awayFranchiseId', jsonData.data[1].id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/events/franchises",
+              "host": ["{{baseUrl}}"],
+              "path": ["events", "franchises"]
+            },
+            "description": "Lists all active IPL franchise teams."
+          }
+        },
+        {
+          "name": "2.6 Schedule Match (CSK vs RCB - BCCI Admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Match Scheduled (200 or 201)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "if (jsonData.data && (jsonData.data.id || jsonData.data.matchId)) {",
+                  "    var mid = jsonData.data.id ? jsonData.data.id : jsonData.data.matchId;",
+                  "    pm.collectionVariables.set('matchId', mid);",
+                  "    console.log('Match ID dynamically stored:', mid);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"homeFranchiseId\": {{homeFranchiseId}},\n  \"awayFranchiseId\": {{awayFranchiseId}},\n  \"matchDateTime\": \"2027-04-10T19:30:00\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/events/matches",
               "host": ["{{baseUrl}}"],
               "path": ["events", "matches"]
             },
-            "description": "BCCI schedules a fixture between Home and Away franchises. Status: CONFIGURATION_PENDING."
+            "description": "BCCI schedules a fixture between dynamic homeFranchiseId and awayFranchiseId. Status: CONFIGURATION_PENDING."
           }
         },
         {
-          "name": "2.6 Configure Stadium & Categories (Home Franchise or BCCI)",
+          "name": "2.7 Configure Stadium & Categories (Home Franchise or BCCI)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Configuration Saved (200 or 201)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201, 409]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -475,18 +756,33 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"stadiumId\": 1,\n  \"categories\": [\n    {\n      \"categoryName\": \"VIP Lounge\",\n      \"capacity\": 500,\n      \"price\": 15000.00\n    },\n    {\n      \"categoryName\": \"Premium Pavilion\",\n      \"capacity\": 2500,\n      \"price\": 5000.00\n    },\n    {\n      \"categoryName\": \"General Stand\",\n      \"capacity\": 25000,\n      \"price\": 1500.00\n    }\n  ]\n}"
+              "raw": "{\n  \"stadiumId\": {{stadiumId}},\n  \"categories\": [\n    {\n      \"categoryName\": \"VIP Lounge\",\n      \"capacity\": 500,\n      \"price\": 15000.00\n    },\n    {\n      \"categoryName\": \"Premium Pavilion\",\n      \"capacity\": 2500,\n      \"price\": 5000.00\n    },\n    {\n      \"categoryName\": \"General Stand\",\n      \"capacity\": 25000,\n      \"price\": 1500.00\n    }\n  ]\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/events/matches/{{matchId}}/configuration",
               "host": ["{{baseUrl}}"],
               "path": ["events", "matches", "{{matchId}}", "configuration"]
             },
-            "description": "Configures stadium allocation and ticket tier pricing. Status becomes WAITING_FOR_APPROVAL."
+            "description": "Configures stadium allocation and pricing using dynamic stadiumId. Status becomes WAITING_FOR_APPROVAL."
           }
         },
         {
-          "name": "2.7 Approve Match (BCCI Admin)",
+          "name": "2.8 Approve Match (BCCI Admin - Emits Kafka Event)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Match Approved (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(jsonData.data.status).to.be.oneOf(['APPROVED', 'TICKETS_OPEN']);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -500,11 +796,24 @@
               "host": ["{{baseUrl}}"],
               "path": ["events", "matches", "{{matchId}}", "approve"]
             },
-            "description": "BCCI approves match configuration. Calculates ticketOpenAt (matchDateTime - 5 days), sets status to APPROVED, and emits Kafka event."
+            "description": "BCCI approves match. Sets status to APPROVED, enqueues MatchApprovedEvent in Transactional Outbox, and triggers Kafka sync to Order Service."
           }
         },
         {
-          "name": "2.8 List Matches",
+          "name": "2.9 List Matches",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Matches List Returned (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "header": [
@@ -522,7 +831,20 @@
           }
         },
         {
-          "name": "2.9 Get Match Details",
+          "name": "2.10 Get Match Details",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Match Details Fetched (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "header": [
@@ -536,7 +858,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["events", "matches", "{{matchId}}"]
             },
-            "description": "Fetches details of a specific match by ID."
+            "description": "Fetches details of the approved match using dynamic matchId."
           }
         }
       ]
@@ -546,6 +868,25 @@
       "item": [
         {
           "name": "3.1 Check Live Ticket Inventory for Match",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Live Inventory Returned (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(jsonData.data).to.be.an('array').that.is.not.empty;",
+                  "});",
+                  "if (jsonData.data && jsonData.data.length > 0) {",
+                  "    pm.collectionVariables.set('ticketCategoryId', jsonData.data[0].ticketCategoryId);",
+                  "    console.log('Dynamically captured ticketCategoryId:', jsonData.data[0].ticketCategoryId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "header": [],
@@ -554,20 +895,24 @@
               "host": ["{{baseUrl}}"],
               "path": ["orders", "inventory", "{{matchId}}"]
             },
-            "description": "Queries live ticket inventory in order_db. Shows availableQuantity vs totalQuantity."
+            "description": "Queries live ticket inventory in order_db. Dynamically captures ticketCategoryId for subsequent reservation."
           }
         },
         {
-          "name": "3.2 Reserve Tickets (10-Min Hold with Pessimistic Lock)",
+          "name": "3.2 Reserve Tickets (10-Min Hold with Idempotency Key)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
                   "var jsonData = pm.response.json();",
+                  "pm.test('Tickets Reserved (201 Created)', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    pm.expect(jsonData.data.orderNumber).to.not.be.empty;",
+                  "});",
                   "if (jsonData.data && jsonData.data.id) {",
                   "    pm.collectionVariables.set('orderId', jsonData.data.id);",
-                  "    console.log('Order ID stored:', jsonData.data.id);",
+                  "    console.log('Order ID dynamically stored:', jsonData.data.id);",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -584,31 +929,39 @@
               {
                 "key": "Authorization",
                 "value": "Bearer {{userToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
               }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"matchId\": {{matchId}},\n  \"items\": [\n    {\n      \"ticketCategoryId\": 1,\n      \"quantity\": 2\n    }\n  ]\n}"
+              "raw": "{\n  \"matchId\": {{matchId}},\n  \"items\": [\n    {\n      \"ticketCategoryId\": {{ticketCategoryId}},\n      \"quantity\": 2\n    }\n  ]\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/orders/reserve",
               "host": ["{{baseUrl}}"],
               "path": ["orders", "reserve"]
             },
-            "description": "Phase 1: Decrements available tickets in order_db using SELECT ... FOR UPDATE and holds reservation for 10 minutes."
+            "description": "Phase 1: Atomically checks Redis flash sale stock, locks row in PostgreSQL, and holds 2 seats in PENDING state for 10 minutes. Captures orderId."
           }
         },
         {
-          "name": "3.3 Initiate Razorpay Order (Phase 2a)",
+          "name": "3.3 Initiate Razorpay Payment Order (Phase 2a)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
                   "var jsonData = pm.response.json();",
+                  "pm.test('Razorpay Order Created (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(jsonData.data.razorpayOrderId).to.not.be.empty;",
+                  "});",
                   "if (jsonData.data && jsonData.data.razorpayOrderId) {",
                   "    pm.collectionVariables.set('razorpayOrderId', jsonData.data.razorpayOrderId);",
-                  "    console.log('Razorpay Order ID stored:', jsonData.data.razorpayOrderId);",
+                  "    console.log('Captured razorpayOrderId:', jsonData.data.razorpayOrderId);",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -628,11 +981,41 @@
               "host": ["{{baseUrl}}"],
               "path": ["orders", "{{orderId}}", "razorpay", "create"]
             },
-            "description": "Generates a Razorpay Order ID for payment processing with amount in paise."
+            "description": "Phase 2a: Interacts with Razorpay to create a payment order with amount in paise. Dynamically captures razorpayOrderId."
           }
         },
         {
-          "name": "3.4 Confirm Payment via Razorpay (Phase 2b)",
+          "name": "3.4 Confirm Payment via Razorpay (Cryptographic Signature Verification)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "var rzpOrderId = pm.collectionVariables.get('razorpayOrderId');",
+                  "var paymentId = 'pay_' + Math.random().toString(36).substring(2, 16);",
+                  "pm.collectionVariables.set('razorpayPaymentId', paymentId);",
+                  "var secret = 's15r8gPZk2R2gB7a1s5F7w1Q';",
+                  "var signature = CryptoJS.HmacSHA256(rzpOrderId + '|' + paymentId, secret).toString(CryptoJS.enc.Hex);",
+                  "pm.collectionVariables.set('razorpaySignature', signature);",
+                  "console.log('Generated Valid Razorpay Signature for paymentId:', paymentId);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Payment Verified & Order Confirmed (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(jsonData.data.status).to.equal('CONFIRMED');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -643,48 +1026,40 @@
               {
                 "key": "Authorization",
                 "value": "Bearer {{userToken}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"paymentMethod\": \"RAZORPAY\",\n  \"razorpayOrderId\": \"{{razorpayOrderId}}\",\n  \"razorpayPaymentId\": \"pay_test_998877665544\",\n  \"razorpaySignature\": \"\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/orders/{{orderId}}/pay",
-              "host": ["{{baseUrl}}"],
-              "path": ["orders", "{{orderId}}", "pay"]
-            },
-            "description": "Finalizes the booking via Razorpay payment confirmation. Publishes ipl.order.confirmed event to Kafka."
-          }
-        },
-        {
-          "name": "3.5 Confirm Payment via Standard UPI",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
               },
               {
-                "key": "Authorization",
-                "value": "Bearer {{userToken}}"
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
               }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"paymentMethod\": \"UPI\",\n  \"paymentReference\": \"UPI_REF_987654321\"\n}"
+              "raw": "{\n  \"paymentMethod\": \"RAZORPAY\",\n  \"razorpayOrderId\": \"{{razorpayOrderId}}\",\n  \"razorpayPaymentId\": \"{{razorpayPaymentId}}\",\n  \"razorpaySignature\": \"{{razorpaySignature}}\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/orders/{{orderId}}/pay",
               "host": ["{{baseUrl}}"],
               "path": ["orders", "{{orderId}}", "pay"]
             },
-            "description": "Alternative payment confirmation using direct UPI/NetBanking reference."
+            "description": "Phase 2b: Pre-request script generates a genuine Razorpay payment ID and HMAC-SHA256 signature using the secret key. Order is CONFIRMED, digital QR tickets are generated, and ipl.order.confirmed is pushed to Kafka."
           }
         },
         {
-          "name": "3.6 Get Order Details",
+          "name": "3.5 Get Order Details",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Order Fetched (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().data.status).to.equal('CONFIRMED');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "header": [
@@ -698,11 +1073,25 @@
               "host": ["{{baseUrl}}"],
               "path": ["orders", "{{orderId}}"]
             },
-            "description": "Fetches order status, ticket items, total price, and expiration timestamp."
+            "description": "Fetches details of the confirmed order."
           }
         },
         {
-          "name": "3.7 View My Bookings",
+          "name": "3.6 View My Bookings",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('My Orders List Returned (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().data).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "header": [
@@ -720,7 +1109,70 @@
           }
         },
         {
-          "name": "3.8 Cancel Reservation (Releases Held Tickets)",
+          "name": "3.7 Create Second Reservation for Cancellation Test",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Temporary Order Created (201 Created)', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "if (jsonData.data && jsonData.data.id) {",
+                  "    pm.collectionVariables.set('cancelOrderId', jsonData.data.id);",
+                  "    console.log('Temporary cancelOrderId captured:', jsonData.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"matchId\": {{matchId}},\n  \"items\": [\n    {\n      \"ticketCategoryId\": {{ticketCategoryId}},\n      \"quantity\": 1\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/orders/reserve",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "reserve"]
+            },
+            "description": "Holds 1 ticket to test the cancellation and inventory release workflow."
+          }
+        },
+        {
+          "name": "3.8 Cancel Reservation (Releases Held Tickets & Redis Stock)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Reservation Cancelled & Tickets Released (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(jsonData.data.status).to.equal('CANCELLED');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -730,11 +1182,542 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/orders/{{orderId}}/cancel",
+              "raw": "{{baseUrl}}/orders/{{cancelOrderId}}/cancel",
               "host": ["{{baseUrl}}"],
-              "path": ["orders", "{{orderId}}", "cancel"]
+              "path": ["orders", "{{cancelOrderId}}", "cancel"]
             },
-            "description": "Cancels a PENDING reservation and immediately returns held tickets back to available inventory with pessimistic row locking. Publishes ipl.ticket.released event to Kafka."
+            "description": "Cancels the temporary reservation, restores seats back to inventory with exclusive row locking, restores Redis in-memory stock, and emits ipl.ticket.released to Kafka."
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Seat Map & Specific Seat Allocation",
+      "item": [
+        {
+          "name": "4.1 View Live Stadium Seat Map",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Seat Map Returned (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(jsonData.data).to.be.an('array').that.is.not.empty;",
+                  "});",
+                  "if (jsonData.data && jsonData.data.length >= 2) {",
+                  "    pm.collectionVariables.set('seatId1', jsonData.data[0].id);",
+                  "    pm.collectionVariables.set('seatId2', jsonData.data[1].id);",
+                  "    console.log('Captured seat IDs:', jsonData.data[0].id, jsonData.data[1].id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/orders/matches/{{matchId}}/seats",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "matches", "{{matchId}}", "seats"]
+            },
+            "description": "Returns physical seat layout (Stand, Row, Seat Number, Price, and Status: AVAILABLE, HELD, BOOKED). Dynamically captures seatId1 and seatId2."
+          }
+        },
+        {
+          "name": "4.2 Reserve Specific Chosen Seats (Redis In-Memory Distributed Lease)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Seats Leased (201 Created)', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    pm.expect(jsonData.data.orderNumber).to.not.be.empty;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"matchId\": {{matchId}},\n  \"seatIds\": [{{seatId1}}, {{seatId2}}]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/orders/reserve-seats",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "reserve-seats"]
+            },
+            "description": "Atomically acquires 10-minute in-memory Redis leases on specific seats using dynamic seat IDs. Automatically rolls back batch if any seat is already locked."
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Digital Tickets & Turnstile Gate Validation",
+      "item": [
+        {
+          "name": "5.1 View My Digital Tickets (with Cryptographic Base64 QR Codes)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Digital Tickets Fetched (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(jsonData.data).to.be.an('array').that.is.not.empty;",
+                  "});",
+                  "if (jsonData.data && jsonData.data.length > 0) {",
+                  "    pm.collectionVariables.set('ticketQrData', jsonData.data[0].qrCodeData);",
+                  "    console.log('Dynamically captured authentic ticketQrData:', jsonData.data[0].qrCodeData);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/orders/tickets/my-tickets",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "tickets", "my-tickets"]
+            },
+            "description": "Fetches all confirmed match tickets with cryptographic QR Code payloads and rendered Base64 PNG images. Captures ticketQrData."
+          }
+        },
+        {
+          "name": "5.2 Validate Entry at Stadium Turnstile Gate (Real QR Scan)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Turnstile Scan Processed (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(jsonData.data.result).to.equal('ALLOWED');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"qrCodeData\": \"{{ticketQrData}}\",\n  \"gate\": \"Gate 3B\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/orders/tickets/validate-turnstile",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "tickets", "validate-turnstile"]
+            },
+            "description": "Scans the actual generated QR Code from Step 5.1 at the stadium turnstile. Validates HMAC signature, checks match validity, marks ticket as USED, and prevents duplicate re-entry."
+          }
+        },
+        {
+          "name": "5.3 Turnstile Re-Scan Test (Duplicate Entry Denial)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Duplicate Entry Blocked (200 OK with DENIED result)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(jsonData.data.result).to.equal('DENIED');",
+                  "    pm.expect(jsonData.data.message).to.include('DUPLICATE ENTRY DETECTED');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"qrCodeData\": \"{{ticketQrData}}\",\n  \"gate\": \"Gate 3B\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/orders/tickets/validate-turnstile",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "tickets", "validate-turnstile"]
+            },
+            "description": "Negative security test: attempts to scan the exact same ticket QR code again. Verifies that turnstile rejects duplicate entry."
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. In-System Notification Center (Kafka-Driven)",
+      "item": [
+        {
+          "name": "6.1 View My In-App Notifications",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Notifications Fetched (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(jsonData.data).to.be.an('array');",
+                  "});",
+                  "if (jsonData.data && jsonData.data.length > 0) {",
+                  "    pm.collectionVariables.set('notificationId', jsonData.data[0].id);",
+                  "    console.log('Captured notificationId:', jsonData.data[0].id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications"]
+            },
+            "description": "Fetches in-system notification inbox populated asynchronously by Kafka (order confirmations, cancellation alerts, live ticket sales). Captures notificationId."
+          }
+        },
+        {
+          "name": "6.2 Get Unread Notification Badge Count",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Unread Count Fetched (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().data.unreadCount).to.be.a('number');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/unread-count",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications", "unread-count"]
+            },
+            "description": "Returns unread notification badge count."
+          }
+        },
+        {
+          "name": "6.3 Mark Notification as Read",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Notification Marked Read (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/{{notificationId}}/read",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications", "{{notificationId}}", "read"]
+            },
+            "description": "Marks a specific notification as read using dynamic notificationId."
+          }
+        },
+        {
+          "name": "6.4 Mark All Notifications as Read",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('All Notifications Marked Read (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/read-all",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications", "read-all"]
+            },
+            "description": "Marks all user notifications as read in bulk."
+          }
+        },
+        {
+          "name": "6.5 Admin Broadcast In-System Announcement",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Announcement Broadcasted (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Weather & Stadium Gates Update\",\n  \"message\": \"Toss for CSK vs RCB is on schedule. Stadium Gates 1 to 5 are now open for entry!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/notifications/broadcast",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications", "broadcast"]
+            },
+            "description": "BCCI Admin broadcasts an in-system announcement to all fan inboxes."
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Security & Negative Edge-Case Tests",
+      "item": [
+        {
+          "name": "7.1 Unauthorized Access Test (Access Orders Without Token -> 401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Unauthorized Request Blocked (401)', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders/my-orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "my-orders"]
+            },
+            "description": "Verifies that Gateway strictly blocks unauthenticated requests to protected endpoints with 401."
+          }
+        },
+        {
+          "name": "7.2 Forbidden Access Test (Fan Attempts Match Approval -> 403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Forbidden Request Blocked (403)', function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/events/matches/{{matchId}}/approve",
+              "host": ["{{baseUrl}}"],
+              "path": ["events", "matches", "{{matchId}}", "approve"]
+            },
+            "description": "Verifies RBAC defense-in-depth: regular fans (ROLE_USER) cannot approve matches."
+          }
+        },
+        {
+          "name": "7.3 Turnstile Forged QR Code Test -> DENIED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Forged QR Rejected (DENIED)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(jsonData.data.result).to.equal('DENIED');",
+                  "    pm.expect(jsonData.data.message).to.include('SECURITY ALERT');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"qrCodeData\": \"IPL2026|TKT-FAKE-999|1|VIP-A-1|SIG:INVALID_TAMPERED_SIG\",\n  \"gate\": \"Gate 1A\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/orders/tickets/validate-turnstile",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "tickets", "validate-turnstile"]
+            },
+            "description": "Verifies that forged or modified QR codes fail cryptographic HMAC verification."
+          }
+        },
+        {
+          "name": "7.4 Logout Fan (Token Blocklisted in Redis)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Logged Out Successfully (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{userRefreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "logout"]
+            },
+            "description": "Logs out the fan user, blocklists their active access token JTI in Redis with remaining TTL, and revokes the refresh token session."
           }
         }
       ]
