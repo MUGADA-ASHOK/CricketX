@@ -1,160 +1,320 @@
 # IPL High-Concurrency Ticket Booking System
 
-A distributed, event-driven microservices platform designed to handle high-traffic flash-sale ticket drops, real-time stadium seat allocation, payment verification, and turnstile entry validation for the Indian Premier League.
+A distributed, event-driven microservices platform designed to handle high-traffic IPL ticket drops, real-time stadium seat allocation, payment verification, and turnstile entry validation.
 
-Built with **Java 21**, **Spring Boot 3**, **Spring Cloud Gateway**, **Apache Kafka**, **Redis**, and **PostgreSQL**.
+**Technology stack:** Java 21, Spring Boot 3, Spring Cloud Gateway, Apache Kafka, Redis, PostgreSQL, React 18, Vite, and Tailwind CSS.
+
+> **Important:** This README documents the architecture and behavior described for the project. Verify that each feature, endpoint, test, and configuration is implemented in the current codebase before presenting it as completed or production-ready. Never commit real credentials, private keys, payment secrets, or production tokens.
+
+---
+
+## Table of Contents
+
+1. [System Architecture](#1-system-architecture)
+2. [Core Architectural and Design Decisions](#2-core-architectural-and-design-decisions)
+3. [Microservices Breakdown](#3-microservices-breakdown)
+4. [Real-Time Event Choreography](#4-real-time-event-choreography)
+5. [API Endpoints Reference](#5-api-endpoints-reference)
+6. [Frontend Multi-Role Portals](#6-frontend-multi-role-portals)
+7. [Local Setup and Running](#7-local-setup-and-running)
+8. [Master Credentials](#8-master-credentials)
+9. [Testing and Quality Assurance](#9-testing-and-quality-assurance)
 
 ---
 
 ## 1. System Architecture
 
+```text
+                    [ Clients / Fans / Gate Scanners ]
+                                     |
+                                     v
+                       +---------------------------+
+                       | API Gateway (Port 8090)   |
+                       | - RS256 JWT validation    |
+                       | - CORS and rate limiting  |
+                       | - Downstream context      |
+                       +-------------+-------------+
+                                     |
+          +--------------------------+--------------------------+
+          |              |              |                       |
+          v              v              v                       v
+ +----------------+ +----------------+ +----------------+ +--------------------+
+ | ipl-auth-      | | ipl-event-     | | ipl-order-     | | ipl-notification-  |
+ | service        | | service        | | service        | | service            |
+ | Port: 8081     | | Port: 8082     | | Port: 8083     | | Port: 8084          |
+ | DB: auth_db    | | DB: event_db   | | DB: order_db   | | DB: notification_db|
+ | Redis TTL      | | Outbox pattern | | Redis Lua      | | In-app inbox       |
+ +----------------+ +-------+--------+ +-------+--------+ +---------+----------+
+                            |                  ^                    ^
+                            |                  |                    |
+                            +------------------+--------------------+
+                                               |
+                                      +--------v--------+
+                                      |  Apache Kafka   |
+                                      | Event messaging |
+                                      +-----------------+
 ```
-                          [ Client / Fans / Gate Scanners ]
-                                         │
-                                         ▼
-                           ┌───────────────────────────┐
-                           │  API Gateway (Port 8090)  │
-                           │  - RS256 JWT Validation   │
-                           │  - CORS & Rate Limiting   │
-                           │  - Downstream Context     │
-                           └─────────────┬─────────────┘
-                                         │
-         ┌───────────────────┬───────────┴───────────┬───────────────────┐
-         │                   │                       │                   │
-         ▼                   ▼                       ▼                   ▼
-┌─────────────────┐ ┌─────────────────┐     ┌─────────────────┐ ┌─────────────────┐
-│ipl-auth-service │ │ipl-event-service│     │ipl-order-service│ │ipl-notification │
-│   (Port 8081)   │ │   (Port 8082)   │     │   (Port 8083)   │ │   (Port 8084)   │
-│ - DB: auth_db   │ │ - DB: event_db  │     │ - DB: order_db  │ │ - DB: notif_db  │
-│ - Redis (TTL)   │ │ - Outbox Pattern│     │ - Redis (Lua)   │ │ - In-App Inbox  │
-└─────────────────┘ └────────┬────────┘     └────────▲────────┘ └────────▲────────┘
-                             │                       │                   │
-                             └───────────► [ Apache Kafka ] ─────────────┴─┘
-                                           Topics:
-                                           - ipl.match.scheduled
-                                           - ipl.match.approved
-                                           - ipl.match.tickets-opened
-                                           - ipl.order.confirmed
-                                           - ipl.ticket.released
-```
+
+### Kafka Topics
+
+- `ipl.match.scheduled`
+- `ipl.match.approved`
+- `ipl.match.tickets-opened`
+- `ipl.order.confirmed`
+- `ipl.ticket.released`
 
 ---
 
-## 2. Core Architectural & Design Decisions
+## 2. Core Architectural and Design Decisions
 
-### A. High-Concurrency Flash Sale (Redis Lua vs. Database Row Locks)
-* **The Problem**: During an IPL ticket drop, 100,000+ users attempt to reserve tickets within seconds. Relying solely on PostgreSQL pessimistic locks (`SELECT ... FOR UPDATE`) leads to database connection pool starvation, lock contention, and request timeouts.
-* **The Solution**: We implemented an in-memory inventory engine in `ipl-order-service` using **atomic Redis Lua scripts** (`EVAL`):
-  ```lua
-  local stock = redis.call('get', KEYS[1])
-  if not stock or tonumber(stock) < tonumber(ARGV[1]) then
-      return -1
-  end
-  return redis.call('decrby', KEYS[1], ARGV[1])
-  ```
-  - Reservation availability checks execute in **under 2ms** in Redis RAM.
-  - Sold-out categories are rejected immediately without waking up PostgreSQL.
-  - Successful reservations then persist the order record with an exclusive 10-minute hold window.
+### A. High-Concurrency Flash Sale: Redis Lua vs. Database Row Locks
+
+**Problem:** During an IPL ticket drop, a large number of users may attempt to reserve tickets within seconds. Relying only on PostgreSQL pessimistic locks (`SELECT ... FOR UPDATE`) can cause lock contention, connection-pool pressure, and request timeouts.
+
+**Approach:** The `ipl-order-service` uses atomic Redis Lua scripts (`EVAL`) for inventory checks and decrements.
+
+```lua
+local stock = redis.call('get', KEYS[1])
+
+if not stock or tonumber(stock) < tonumber(ARGV[1]) then
+    return -1
+end
+
+return redis.call('decrby', KEYS[1], ARGV[1])
+```
+
+- Inventory checks and decrements are performed atomically in Redis.
+- Sold-out categories can be rejected before creating database work.
+- Successful reservations are persisted as orders with a 10-minute hold window.
 
 ### B. Asymmetric RS256 JWT Authentication Boundary
-* **The Problem**: Shared symmetric secrets (HMAC-SHA256) require distributing the signing secret to the Gateway and every microservice. A vulnerability in any downstream service compromises the entire auth boundary.
-* **The Solution**: We use **asymmetric RSA (RS256)**:
-  - `ipl-auth-service` exclusively holds the **RSA Private Key** to issue and sign tokens.
-  - The API Gateway and all other microservices only receive the **RSA Public Key**.
-  - Services verify token validity and extract user identity without making synchronous network calls to the auth database.
-  - Immediate token invalidation on logout is achieved by storing the token's `jti` in a **Redis Blocklist** with an automatic TTL matching the token's remaining lifespan.
 
-### C. Reliable Messaging via the Transactional Outbox Pattern
-* **The Problem**: Directly publishing to Kafka inside a Spring `@Transactional` method creates a dual-write hazard. If Kafka blips or the network drops after the database commits, the event is permanently lost.
-* **The Solution**: `ipl-event-service` writes domain events (e.g. `MatchApprovedEvent`) into a local `outbox_events` table inside the exact same database transaction as the match update. A background polling worker (`OutboxPublisherService`) batches pending events, publishes them to Kafka with exponential backoff retries, and marks them `PUBLISHED`.
+**Problem:** With a shared symmetric signing secret, the gateway and every downstream service need access to the same secret. A compromised service could therefore expose the token-signing secret.
+
+**Approach:** The system uses asymmetric RSA signing with RS256.
+
+- `ipl-auth-service` holds the RSA private key and signs tokens.
+- The API Gateway and other services use the RSA public key to verify tokens.
+- Services can validate tokens and extract user identity without making a synchronous request to the authentication database.
+- Logout invalidation uses the token's `jti` in a Redis blocklist, with a TTL matching the token's remaining lifetime.
+
+### C. Reliable Messaging: Transactional Outbox Pattern
+
+**Problem:** Publishing directly to Kafka from a Spring `@Transactional` method creates a dual-write problem. The database transaction may commit while Kafka publishing fails, leaving the event unsent.
+
+**Approach:** `ipl-event-service` stores domain events, such as `MatchApprovedEvent`, in an `outbox_events` table in the same database transaction as the match update.
+
+A background worker (`OutboxPublisherService`) then:
+
+1. Reads pending outbox events in batches.
+2. Publishes them to Kafka.
+3. Retries failures using backoff.
+4. Marks successfully published events as `PUBLISHED`.
 
 ### D. Two-Phase Ticket Hold with Distributed Leases
-* **Phase 1 (Reserve)**: When a fan selects seats or general categories, the system acquires an in-memory lease (`SET seat:match:1:seat:101 <userId> NX EX 600`) and creates an `Order` in `PENDING` state with `expiresAt = now + 10 mins`.
-* **Phase 2 (Pay)**: The user completes checkout via Razorpay or direct UPI. Cryptographic signatures are verified before transitioning the order to `CONFIRMED`.
-* **Automatic Rollback**: A background scheduler (`OrderExpiryScheduler`) runs every 30 seconds to reclaim abandoned reservations, returning inventory to both Redis and PostgreSQL and releasing seat leases.
+
+**Phase 1 — Reserve**
+
+When a fan selects seats or a general ticket category:
+
+- The system acquires a Redis lease for a physical seat, where applicable.
+- Example lease command:
+
+```text
+SET seat:match:1:seat:101 <userId> NX EX 600
+```
+
+- An order is created in the `PENDING` state.
+- The order expires after 10 minutes if payment is not completed.
+
+**Phase 2 — Pay**
+
+- The user completes checkout through Razorpay or the supported UPI flow.
+- Payment signatures are verified before the order transitions to `CONFIRMED`.
+
+**Automatic rollback**
+
+A background scheduler (`OrderExpiryScheduler`) runs every 30 seconds to reclaim expired reservations, restore inventory in Redis and PostgreSQL, and release seat leases.
 
 ### E. Idempotent API Design
-* Network timeouts often cause mobile clients to retry mutating requests. Every critical endpoint (`/orders/reserve`, `/orders/reserve-seats`, `/orders/{id}/pay`, `/orders/{id}/cancel`, `/events/matches/{id}/approve`) supports an `Idempotency-Key` header.
-* Duplicate calls return the existing resource representation with `200 OK` rather than duplicating inventory deductions or throwing state errors.
 
-### F. Tamper-Proof QR Ticketing & Turnstile Validation
-* Confirmed orders generate digital tickets with cryptographically signed QR payloads (`IPL2026|<ticketNumber>|<matchId>|<seatNumber>|SIG:<hmacSha256>`).
-* Base64 QR code images are rendered on-the-fly via Google ZXing.
-* The turnstile validation endpoint (`POST /orders/tickets/validate-turnstile`) verifies the cryptographic signature offline and checks ticket state. Scanning an already used ticket immediately rejects entry with `DUPLICATE ENTRY DETECTED`, recording gate ID and timestamp.
+Network timeouts can cause clients to retry requests that change server state. Critical operations support an `Idempotency-Key` header, including:
+
+- `POST /orders/reserve`
+- `POST /orders/reserve-seats`
+- `POST /orders/{id}/pay`
+- `POST /orders/{id}/cancel`
+- `POST /events/matches/{id}/approve`
+
+Repeated requests with the same idempotency key should return the existing operation result rather than deducting inventory or performing the operation again.
+
+### F. Tamper-Resistant QR Ticketing and Turnstile Validation
+
+Confirmed orders generate digital tickets with signed QR payloads. The documented payload structure is:
+
+```text
+IPL2026|<ticketNumber>|<matchId>|<seatNumber>|SIG:<hmacSha256>
+```
+
+- The frontend ticket wallet renders QR passes using `qrcode.react`.
+- The turnstile endpoint is `POST /orders/tickets/validate-turnstile`.
+- The endpoint verifies the QR signature and ticket state.
+- A previously used ticket is rejected as a duplicate entry, with gate ID and timestamp recorded.
+
+### G. Domain Role Hierarchy and Home Venue Integrity
+
+- **BCCI Admin:** Schedules fixtures. Selecting a home franchise resolves and locks its home stadium (`homeStadiumId`).
+- **Home Franchise:** Receives a Kafka notification to configure ticket-category quotas and pricing. The assigned venue remains locked.
+- **BCCI Final Approval:** After pricing configuration, the match moves to `WAITING_FOR_APPROVAL`. Admin approval publishes the ticket-opening event and starts the documented 7-day booking window.
 
 ---
 
 ## 3. Microservices Breakdown
 
 | Service | Port | Database | Primary Responsibilities |
-| :--- | :---: | :--- | :--- |
-| **`ipl-api-gateway`** | `8090` | None | Single entry point, coarse RBAC routing, RS256 token verification, identity header injection (`X-User-Id`, `X-User-Role`), global CORS. |
-| **`ipl-auth-service`** | `8081` | `auth_db` | User registration (Admin, Franchise, Fan), RS256 JWT generation, refresh token rotation, Redis token blocklist on logout. |
-| **`ipl-event-service`** | `8082` | `event_db` | Stadium and Franchise management, match fixture scheduling, category capacity constraint validation ($Sum(Seats) \le Capacity$), Transactional Outbox. |
-| **`ipl-order-service`** | `8083` | `order_db` | Redis Lua flash-sale inventory, physical seat map allocation, Razorpay payment verification, order expiration scheduler, turnstile gate scanner. |
-| **`ipl-notification-service`** | `8084` | `notification_db` | Consumes Kafka events (`ipl.order.confirmed`, `ipl.ticket.released`, `ipl.match.tickets-opened`) to maintain in-system fan notification inboxes and broadcast alerts. |
+|---|---:|---|---|
+| `ipl-api-gateway` | 8090 | None | Single entry point, coarse-grained RBAC routing, RS256 token verification, identity header injection (`X-User-Id`, `X-User-Role`), and global CORS |
+| `ipl-auth-service` | 8081 | `auth_db` | User registration, RS256 JWT generation, refresh-token rotation, and Redis token blocklist on logout |
+| `ipl-event-service` | 8082 | `event_db` | Stadium and franchise management, fixture scheduling, category-capacity validation, and Transactional Outbox |
+| `ipl-order-service` | 8083 | `order_db` | Redis Lua flash-sale inventory, physical seat allocation, Razorpay payment verification, order expiry, and turnstile scanning |
+| `ipl-notification-service` | 8084 | `notification_db` | Kafka consumers that maintain fan notification inboxes and broadcast alerts |
+
+**Capacity constraint:**
+
+\[
+\sum \text{Category Seats} \leq \text{Stadium Capacity}
+\]
 
 ---
 
-## 4. API Endpoints Reference
+## 4. Real-Time Event Choreography
 
-All requests pass through the **API Gateway** on port `8090`.
+### Fixture Lifecycle: BCCI and Franchise Workflow
 
-### Authentication (`/auth/**`)
-* `POST /auth/login` - Authenticate credentials; returns access & refresh tokens.
-* `POST /auth/register` - Public fan self-registration (`ROLE_USER`).
-* `POST /auth/franchise/register` - BCCI Admin endpoint to register team accounts (`ROLE_FRANCHISE`).
-* `POST /auth/refresh` - Rotate refresh token.
-* `POST /auth/logout` - Blacklist active token JTI in Redis.
-* `GET  /auth/me` - Get authenticated user profile.
-* `GET  /auth/public-key` - Retrieve RS256 public key.
+The documented workflow is:
 
-### Events & Fixtures (`/events/**`)
-* `POST /events/stadiums` - Register stadium venue with capacity (Admin).
-* `GET  /events/stadiums` - List stadiums.
-* `POST /events/franchises` - Register franchise team linked to home stadium (Admin).
-* `GET  /events/franchises` - List franchises.
-* `POST /events/matches` - Schedule match fixture (Status: `CONFIGURATION_PENDING`).
-* `POST /events/matches/{id}/configuration` - Configure seat tiers and pricing (Franchise).
-* `POST /events/matches/{id}/approve` - Approve match, set ticket open date, enqueue Kafka event (Admin).
-* `GET  /events/matches` - List scheduled matches.
+1. BCCI Admin schedules a match and selects the home franchise.
+2. The system resolves and locks the franchise's home stadium.
+3. The franchise receives a notification that the fixture requires ticket configuration.
+4. The franchise configures category quotas and pricing.
+5. The match transitions to `WAITING_FOR_APPROVAL`.
+6. BCCI Admin approves the match.
+7. The event service records the approval and publishes the ticket-opening event through the outbox workflow.
+8. The booking window opens according to the configured schedule.
 
-### Orders & Ticketing (`/orders/**`)
-* `GET  /orders/inventory/{matchId}` - Query live category inventory.
-* `POST /orders/reserve` - Reserve general category tickets (10-minute hold).
-* `GET  /orders/matches/{matchId}/seats` - Live stadium seat map (`AVAILABLE`, `HELD`, `BOOKED`).
-* `POST /orders/reserve-seats` - Reserve specific physical seats via Redis distributed lease.
-* `POST /orders/{id}/razorpay/create` - Initiate Razorpay payment order.
-* `POST /orders/{id}/pay` - Confirm payment via Razorpay HMAC signature or verified UPI.
-* `POST /orders/{id}/cancel` - Cancel reservation and release inventory.
-* `GET  /orders/my-orders` - List fan's booking history.
-* `GET  /orders/tickets/my-tickets` - Retrieve digital tickets with Base64 QR codes.
-* `POST /orders/tickets/validate-turnstile` - Stadium gate scanner verification.
+**Kafka events involved:**
 
-### In-System Notifications (`/notifications/**`)
-* `GET   /notifications` - Fetch user's in-app notification inbox.
-* `GET   /notifications/unread-count` - Get unread count for UI badge.
-* `PATCH /notifications/{id}/read` - Mark single notification as read.
-* `PATCH /notifications/read-all` - Mark all notifications as read.
-* `POST  /notifications/broadcast` - Broadcast announcement to all fans (Admin).
+- `ipl.match.scheduled`
+- `ipl.match.approved`
+- `ipl.match.tickets-opened`
 
 ---
 
-## 5. Local Setup & Running
+## 5. API Endpoints Reference
+
+All client and web traffic is routed through the API Gateway on port `8090`.
+
+### Authentication — `/auth/**`
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/auth/login` | Authenticate credentials and return access and refresh tokens |
+| POST | `/auth/register` | Public fan self-registration (`ROLE_USER`) |
+| POST | `/auth/franchise/register` | BCCI Admin endpoint to register franchise accounts (`ROLE_FRANCHISE`) |
+| POST | `/auth/refresh` | Rotate refresh token |
+| POST | `/auth/logout` | Add the active token JTI to the Redis blocklist |
+| GET | `/auth/me` | Get the authenticated user's profile |
+| GET | `/auth/public-key` | Retrieve the RS256 public key |
+
+### Events and Fixtures — `/events/**`
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/events/stadiums` | Register a stadium with its capacity (Admin) |
+| GET | `/events/stadiums` | List stadiums |
+| POST | `/events/franchises` | Register a franchise linked to its home stadium (Admin) |
+| GET | `/events/franchises` | List franchises |
+| POST | `/events/matches` | Schedule a match (`CONFIGURATION_PENDING`) |
+| POST | `/events/matches/{id}/configuration` | Configure seat tiers and pricing (Franchise) |
+| POST | `/events/matches/{id}/approve` | Approve a match, set ticket opening date, and enqueue a Kafka event (Admin) |
+| GET | `/events/matches` | List scheduled matches |
+
+### Orders and Ticketing — `/orders/**`
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/orders/inventory/{matchId}` | Query live category inventory |
+| POST | `/orders/reserve` | Reserve general-category tickets with a 10-minute hold |
+| GET | `/orders/matches/{matchId}/seats` | Get the live seat map (`AVAILABLE`, `HELD`, `BOOKED`) |
+| POST | `/orders/reserve-seats` | Reserve physical seats using Redis distributed leases |
+| POST | `/orders/{id}/razorpay/create` | Initiate a Razorpay payment order |
+| POST | `/orders/{id}/pay` | Confirm payment using Razorpay HMAC signature or verified UPI |
+| POST | `/orders/{id}/cancel` | Cancel a reservation and release inventory |
+| GET | `/orders/my-orders` | List the fan's booking history |
+| GET | `/orders/tickets/my-tickets` | Retrieve digital tickets |
+| POST | `/orders/tickets/validate-turnstile` | Verify a ticket at the stadium gate |
+
+### In-System Notifications — `/notifications/**`
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/notifications` | Fetch the user's in-app notification inbox |
+| GET | `/notifications/unread-count` | Get the unread notification count |
+| PATCH | `/notifications/{id}/read` | Mark one notification as read |
+| PATCH | `/notifications/read-all` | Mark all notifications as read |
+| POST | `/notifications/broadcast` | Broadcast an announcement to all fans (Admin) |
+
+---
+
+## 6. Frontend Multi-Role Portals
+
+The frontend application, `ipl-frontend`, uses React 18, Vite, and Tailwind CSS. Its visual direction is an IPL dark stadium-night theme.
+
+### BCCI Admin Portal — `/admin`
+
+- Stadium and franchise registration with home-venue linking.
+- Fixture scheduling with automatic home-stadium locking.
+- Match-approval dashboard with workflow states, from awaiting franchise pricing to approval for ticket sale.
+- Turnstile gate-scanner simulator.
+
+### Franchise Dashboard — `/franchise`
+
+- Match fixture feed filtered to the franchise's matches.
+- Stadium category quota and pricing configuration.
+- Kafka-driven inbox alerts when new fixtures are scheduled.
+
+### Fan Ticketing Hub — `/fan`
+
+- Live fixture feed with 7-day countdown timers.
+- Seat-map selection and flash-sale category reservation.
+- 10-minute reservation countdown.
+- Razorpay or supported UPI checkout.
+- Digital ticket wallet at `/fan/tickets`, with QR passes rendered using `qrcode.react`.
+
+---
+
+## 7. Local Setup and Running
 
 ### Prerequisites
-* **Java 21**
-* **Maven 3.9+**
-* **Docker & Docker Compose**
+
+- Java 21
+- Node.js 18+ and npm
+- Maven 3.9+
+- Docker and Docker Compose
+- PostgreSQL
 
 ### Step 1: Start Infrastructure
-Start Redis and Kafka (running in KRaft mode):
+
+Start Redis and Kafka (configured to run in KRaft mode):
+
 ```bash
 docker compose up -d
 ```
 
 ### Step 2: Create PostgreSQL Databases
-Connect to your PostgreSQL instance and create the required databases:
+
+Connect to your local PostgreSQL instance (default port `5432`) and create the service databases:
+
 ```sql
 CREATE DATABASE auth_db;
 CREATE DATABASE event_db;
@@ -162,31 +322,87 @@ CREATE DATABASE order_db;
 CREATE DATABASE notification_db;
 ```
 
-### Step 3: Run the Microservices
-Start each service in a separate terminal:
+### Step 3: Start the Backend Microservices
+
+Run each service in a separate terminal.
+
 ```bash
-# 1. API Gateway (Port 8090)
-cd ipl-api-gateway && ./mvnw spring-boot:run
+# API Gateway — Port 8090
+cd ipl-api-gateway
+./mvnw spring-boot:run
+```
 
-# 2. Auth Service (Port 8081)
-cd ipl-auth-service && ./mvnw spring-boot:run
+```bash
+# Auth Service — Port 8081
+cd ipl-auth-service
+./mvnw spring-boot:run
+```
 
-# 3. Event Service (Port 8082)
-cd ipl-event-service && ./mvnw spring-boot:run
+```bash
+# Event Service — Port 8082
+cd ipl-event-service
+./mvnw spring-boot:run
+```
 
-# 4. Order Service (Port 8083)
-cd ipl-order-service && ./mvnw spring-boot:run
+```bash
+# Order Service — Port 8083
+cd ipl-order-service
+./mvnw spring-boot:run
+```
 
-# 5. Notification Service (Port 8084)
-cd ipl-notification-service && ./mvnw spring-boot:run
+```bash
+# Notification Service — Port 8084
+cd ipl-notification-service
+./mvnw spring-boot:run
+```
+
+Run these commands from the repository root, adjusting paths if your project directory structure differs. On Windows PowerShell, use `.\mvnw.cmd spring-boot:run` if the Maven wrapper script is provided as `mvnw.cmd`.
+
+### Step 4: Start the Frontend
+
+```bash
+cd ipl-frontend
+npm install
+npm run dev
+```
+
+Open the frontend URL printed by Vite in the terminal. If Vite is configured to use port `3000`, open:
+
+```text
+http://localhost:3000
 ```
 
 ---
 
-## 6. Testing
+## 8. Master Credentials
 
-### Automated Unit & Logical Flow Tests
-Run test suites across the services:
+The original project notes state that the BCCI administrator account is initialized automatically. Do not publish a real or shared password in a public repository.
+
+Configure the initial administrator credentials through environment variables or a secrets manager. For example, document variable names without committing their values:
+
+```env
+BCCI_ADMIN_EMAIL=<configure-locally>
+BCCI_ADMIN_PASSWORD=<configure-a-strong-password>
+```
+
+Other accounts:
+
+| Role | Account Creation | Portal |
+|---|---|---|
+| BCCI Admin | Initialized through secure application configuration | `/admin` |
+| Franchise Admin | Created through the Admin Console | `/franchise` |
+| Fan User | Self-registers through `/auth/register` | `/fan` |
+
+If credentials have already been committed to a public repository, changing the README is not enough: rotate the exposed password/secret and remove it from the repository's tracked configuration and history as appropriate.
+
+---
+
+## 9. Testing and Quality Assurance
+
+### Run Backend Test Suites
+
+Run the tests for each microservice:
+
 ```bash
 ./mvnw test -f ipl-order-service/pom.xml
 ./mvnw test -f ipl-event-service/pom.xml
@@ -194,13 +410,31 @@ Run test suites across the services:
 ./mvnw test -f ipl-notification-service/pom.xml
 ```
 
-The test suite covers:
-- In-memory Redis flash-sale atomic decrements and fast rejection.
-- Capacity overflow boundary validations ($Sum(CategorySeats) \le StadiumCapacity$).
-- Razorpay HMAC-SHA256 signature verification and UPI anti-replay fraud prevention.
-- Cryptographic QR code generation and turnstile duplicate-entry defense.
-- Idempotency guarantees across reservation, payment, and approval APIs.
+### Documented Test Coverage
 
-### End-to-End Postman Collection
-Import [`IPL_Ticket_Booking.postman_collection.json`](./IPL_Ticket_Booking.postman_collection.json) into Postman. It contains **41 automated requests** with dynamic variable chaining (IDs, tokens, and cryptographic signatures are passed automatically between steps).
+The project notes identify the following test areas:
 
+- Atomic Redis flash-sale inventory decrements and sold-out rejection.
+- Capacity-boundary validation:
+
+\[
+\sum \text{Category Seats} \leq \text{Stadium Capacity}
+\]
+
+- Razorpay HMAC-SHA256 signature verification and replay protection.
+- HMAC-SHA256 QR-code generation and duplicate-entry rejection at turnstiles.
+- Idempotency guarantees across reservation, payment, and match-approval APIs.
+
+---
+## Conclusion
+The IPL High-Concurrency Ticket Booking System brings together the core challenges of a real-world, high-demand ticketing platform: handling sudden traffic spikes, protecting limited inventory, coordinating distributed services, processing payments reliably, and validating tickets at stadium entry points.
+
+By combining Spring Boot microservices, Redis atomic operations, Apache Kafka, PostgreSQL, and RS256-based authentication, the project demonstrates how a complex application can be divided into independently focused services while maintaining clear communication and security boundaries.
+
+Design patterns such as the Transactional Outbox, idempotent APIs, distributed reservation leases, and automatic expiry handling address important failure scenarios that can occur in distributed systems.
+
+The completed application brings these backend capabilities together with role-specific portals for BCCI administrators, franchise administrators, and fans. From fixture scheduling and ticket configuration to reservation, payment confirmation, digital ticket management, and gate validation, the platform covers the major stages of the ticket-booking lifecycle.
+
+More importantly, this project represents the practical application of software engineering principles beyond basic CRUD development. It required careful consideration of concurrency, consistency, fault handling, authentication, service communication, and the reliability of state-changing operations.
+
+The result is a complete IPL ticket-booking application that demonstrates how modern backend technologies and distributed-system design principles can be applied to a demanding, real-world use case.
