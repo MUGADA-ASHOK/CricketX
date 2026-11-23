@@ -25,10 +25,10 @@ public class NotificationController {
     /**
      * Get all in-app notifications for the authenticated user (newest first).
      */
-    @GetMapping
+    @GetMapping({"", "/"})
     public ResponseEntity<ApiResponse<List<NotificationResponse>>> getMyNotifications(
             @AuthenticationPrincipal AuthenticatedUser user) {
-        List<NotificationResponse> list = notificationService.getUserNotifications(user.userId());
+        List<NotificationResponse> list = notificationService.getUserNotifications(user.userId(), user.role());
         return ResponseEntity.ok(ApiResponse.success("Notifications fetched successfully", list));
     }
 
@@ -38,7 +38,7 @@ public class NotificationController {
     @GetMapping("/unread-count")
     public ResponseEntity<ApiResponse<Map<String, Long>>> getUnreadCount(
             @AuthenticationPrincipal AuthenticatedUser user) {
-        long count = notificationService.getUnreadCount(user.userId());
+        long count = notificationService.getUnreadCount(user.userId(), user.role());
         return ResponseEntity.ok(ApiResponse.success("Unread count", Map.of("unreadCount", count)));
     }
 
@@ -59,7 +59,7 @@ public class NotificationController {
     @PatchMapping("/read-all")
     public ResponseEntity<ApiResponse<Map<String, Integer>>> markAllAsRead(
             @AuthenticationPrincipal AuthenticatedUser user) {
-        int updated = notificationService.markAllAsRead(user.userId());
+        int updated = notificationService.markAllAsRead(user.userId(), user.role());
         return ResponseEntity.ok(ApiResponse.success("Marked all as read", Map.of("updatedCount", updated)));
     }
 

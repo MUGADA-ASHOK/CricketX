@@ -17,6 +17,9 @@ import com.ipl.event.exception.StadiumNotFoundException;
 import com.ipl.event.exception.UnauthorizedFranchiseException;
 import com.ipl.event.repository.FranchiseRepository;
 import com.ipl.event.repository.MatchRepository;
+import com.ipl.event.event.MatchConfiguredEvent;
+import com.ipl.event.kafka.KafkaTopicConfig;
+import com.ipl.event.kafka.OutboxPublisherService;
 import com.ipl.event.repository.MatchTicketInventoryRepository;
 import com.ipl.event.repository.StadiumRepository;
 import com.ipl.event.repository.TicketCategoryRepository;
@@ -42,24 +45,49 @@ public class MatchConfigurationService {
     private final StadiumRepository stadiumRepository;
     private final TicketCategoryRepository ticketCategoryRepository;
     private final MatchTicketInventoryRepository matchTicketInventoryRepository;
+    private final OutboxPublisherService outboxPublisherService;
 
     @Transactional
     public MatchConfigurationResponse createConfiguration(Long matchId, AuthenticatedUser user, MatchConfigurationRequest request) {
         Match match = getOwnedMatchOrThrow(matchId, user);
 
-        if (match.getStatus() != MatchStatus.CONFIGURATION_PENDING) {
+        if (match.getStatus() == MatchStatus.APPROVED || match.getStatus() == MatchStatus.TICKETS_OPEN) {
             throw new InvalidMatchStateException(
-                    "Match must be CONFIGURATION_PENDING to configure - current status: " + match.getStatus());
+                    "Match is already approved for sale and cannot be reconfigured - current status: " + match.getStatus());
         }
+
+        // Idempotently clear previous draft allocations if re-configuring before BCCI approval
         if (matchTicketInventoryRepository.existsByMatchId(matchId)) {
-            throw new ConfigurationAlreadyExistsException("Match already configured - use PUT to update before approval");
+            matchTicketInventoryRepository.deleteAll(matchTicketInventoryRepository.findByMatchId(matchId));
         }
 
         applyConfiguration(match, request);
         match.setStatus(MatchStatus.WAITING_FOR_APPROVAL);
-        matchRepository.save(match);
+        Match saved = matchRepository.save(match);
 
-        return toResponse(match);
+        int totalAllocated = request.getCategories().stream()
+                .mapToInt(MatchConfigurationRequest.TicketCategoryConfig::getCapacity)
+                .sum();
+
+        MatchConfiguredEvent event = new MatchConfiguredEvent(
+                saved.getId(),
+                saved.getHomeFranchise() != null ? saved.getHomeFranchise().getId() : null,
+                saved.getHomeFranchise() != null ? saved.getHomeFranchise().getUserId() : null,
+                saved.getHomeFranchise() != null ? saved.getHomeFranchise().getFranchiseName() : "Home Team",
+                saved.getAwayFranchise() != null ? saved.getAwayFranchise().getId() : null,
+                saved.getAwayFranchise() != null ? saved.getAwayFranchise().getUserId() : null,
+                saved.getAwayFranchise() != null ? saved.getAwayFranchise().getFranchiseName() : "Away Team",
+                saved.getStadium() != null ? saved.getStadium().getName() : "Stadium Venue",
+                saved.getMatchDateTime(),
+                totalAllocated
+        );
+
+        outboxPublisherService.saveOutboxEvent(
+                "MATCH", saved.getId(),
+                "MatchConfiguredEvent", KafkaTopicConfig.MATCH_CONFIGURED_TOPIC, event
+        );
+
+        return toResponse(saved);
     }
 
     @Transactional
@@ -74,9 +102,31 @@ public class MatchConfigurationService {
         // Replace-all semantics: simplest correct behavior for "update before approval".
         matchTicketInventoryRepository.deleteAll(matchTicketInventoryRepository.findByMatchId(matchId));
         applyConfiguration(match, request);
-        matchRepository.save(match);
+        Match saved = matchRepository.save(match);
 
-        return toResponse(match);
+        int totalAllocated = request.getCategories().stream()
+                .mapToInt(MatchConfigurationRequest.TicketCategoryConfig::getCapacity)
+                .sum();
+
+        MatchConfiguredEvent event = new MatchConfiguredEvent(
+                saved.getId(),
+                saved.getHomeFranchise() != null ? saved.getHomeFranchise().getId() : null,
+                saved.getHomeFranchise() != null ? saved.getHomeFranchise().getUserId() : null,
+                saved.getHomeFranchise() != null ? saved.getHomeFranchise().getFranchiseName() : "Home Team",
+                saved.getAwayFranchise() != null ? saved.getAwayFranchise().getId() : null,
+                saved.getAwayFranchise() != null ? saved.getAwayFranchise().getUserId() : null,
+                saved.getAwayFranchise() != null ? saved.getAwayFranchise().getFranchiseName() : "Away Team",
+                saved.getStadium() != null ? saved.getStadium().getName() : "Stadium Venue",
+                saved.getMatchDateTime(),
+                totalAllocated
+        );
+
+        outboxPublisherService.saveOutboxEvent(
+                "MATCH", saved.getId(),
+                "MatchConfiguredEvent", KafkaTopicConfig.MATCH_CONFIGURED_TOPIC, event
+        );
+
+        return toResponse(saved);
     }
 
     @Transactional(readOnly = true)
@@ -87,25 +137,40 @@ public class MatchConfigurationService {
     }
 
     private void applyConfiguration(Match match, MatchConfigurationRequest request) {
-        Stadium stadium = stadiumRepository.findById(request.getStadiumId())
-                .orElseThrow(() -> new StadiumNotFoundException("Stadium not found: " + request.getStadiumId()));
+        // Enforce: The selected home stadium assigned by BCCI cannot change!
+        Stadium stadium = match.getStadium();
+        if (stadium == null) {
+            if (request.getStadiumId() != null) {
+                stadium = stadiumRepository.findById(request.getStadiumId()).orElse(null);
+            }
+            if (stadium == null && match.getHomeFranchise() != null && match.getHomeFranchise().getHomeStadium() != null) {
+                stadium = match.getHomeFranchise().getHomeStadium();
+            }
+            if (stadium == null) {
+                stadium = stadiumRepository.findAll().stream().findFirst()
+                        .orElseThrow(() -> new StadiumNotFoundException("No stadium assigned to this match"));
+            }
+            match.setStadium(stadium);
+        }
+
+        final Stadium finalStadium = stadium;
 
         int totalRequestedCapacity = request.getCategories().stream()
                 .mapToInt(MatchConfigurationRequest.TicketCategoryConfig::getCapacity)
                 .sum();
-        if (totalRequestedCapacity > stadium.getCapacity()) {
+        if (totalRequestedCapacity > finalStadium.getCapacity()) {
             throw new InvalidTicketConfigurationException(
                     "Total ticket category capacity (" + totalRequestedCapacity
-                            + ") exceeds stadium capacity (" + stadium.getCapacity() + ")");
+                            + ") exceeds stadium capacity (" + finalStadium.getCapacity() + ")");
         }
 
         for (MatchConfigurationRequest.TicketCategoryConfig categoryConfig : request.getCategories()) {
             TicketCategory ticketCategory = ticketCategoryRepository
-                    .findByStadiumId(stadium.getId()).stream()
+                    .findByStadiumId(finalStadium.getId()).stream()
                     .filter(tc -> tc.getCategoryName().equalsIgnoreCase(categoryConfig.getCategoryName()))
                     .findFirst()
                     .orElseGet(() -> ticketCategoryRepository.save(TicketCategory.builder()
-                            .stadium(stadium)
+                            .stadium(finalStadium)
                             .categoryName(categoryConfig.getCategoryName())
                             .price(categoryConfig.getPrice())
                             .capacity(categoryConfig.getCapacity())
@@ -122,28 +187,29 @@ public class MatchConfigurationService {
                     .build();
             matchTicketInventoryRepository.save(inventory);
         }
-
-        match.setStadium(stadium);
     }
 
     /**
      * Resolves the match AND verifies the authenticated user's own
-     * franchise is its home franchise. Never trust a franchise/team ID
-     * from the request body for this check.
+     * franchise is the designated home franchise.
+     * Only the home franchise (or BCCI admin) is authorized to configure ticket pricing.
      */
     private Match getOwnedMatchOrThrow(Long matchId, AuthenticatedUser user) {
         Match match = matchRepository.findById(matchId)
                 .orElseThrow(() -> new com.ipl.event.exception.MatchNotFoundException("Match not found: " + matchId));
 
-        if ("ADMIN".equalsIgnoreCase(user.role())) {
+        String role = user.role();
+        if (role != null && (role.equalsIgnoreCase("ADMIN") || role.equalsIgnoreCase("ROLE_ADMIN"))) {
             return match;
         }
 
         Franchise franchise = franchiseRepository.findByUserId(user.userId())
-                .orElseThrow(() -> new FranchiseNotFoundException("No franchise is registered for this account"));
+                .orElseThrow(() -> new UnauthorizedFranchiseException("Only registered franchises can configure match pricing"));
 
         if (!franchise.getId().equals(match.getHomeFranchise().getId())) {
-            throw new UnauthorizedFranchiseException("Only the home franchise can configure this match");
+            throw new UnauthorizedFranchiseException(
+                    "Pricing configuration can only be done by the home franchise (" 
+                    + match.getHomeFranchise().getFranchiseName() + ")");
         }
 
         return match;
@@ -163,6 +229,7 @@ public class MatchConfigurationService {
 
         return MatchConfigurationResponse.builder()
                 .matchId(match.getId())
+                .id(match.getId())
                 .stadiumId(match.getStadium() != null ? match.getStadium().getId() : null)
                 .stadiumName(match.getStadium() != null ? match.getStadium().getName() : null)
                 .matchStatus(match.getStatus())

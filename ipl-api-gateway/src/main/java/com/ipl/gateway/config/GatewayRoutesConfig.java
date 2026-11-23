@@ -21,17 +21,17 @@ public class GatewayRoutesConfig {
     @Bean
     public RouteLocator gatewayRoutes(RouteLocatorBuilder builder) {
         return builder.routes()
-                .route("ipl-auth-service", r -> r.path("/auth/**")
-                        .filters(f -> f.rewritePath("/auth/(?<segment>.*)", "/api/auth/${segment}"))
+                .route("ipl-auth-service", r -> r.path("/auth", "/auth/**")
+                        .filters(f -> f.rewritePath("/auth(?<segment>/?.*)", "/api/auth${segment}"))
                         .uri(serviceUrls.getAuthUrl()))
-                .route("ipl-event-service", r -> r.path("/events/**")
-                        .filters(f -> f.rewritePath("/events/(?<segment>.*)", "/api/events/${segment}"))
+                .route("ipl-event-service", r -> r.path("/events", "/events/**")
+                        .filters(f -> f.rewritePath("/events(?<segment>/?.*)", "/api/events${segment}"))
                         .uri(serviceUrls.getEventUrl()))
-                .route("ipl-order-service", r -> r.path("/orders/**")
-                        .filters(f -> f.rewritePath("/orders/(?<segment>.*)", "/api/orders/${segment}"))
+                .route("ipl-order-service", r -> r.path("/orders", "/orders/**")
+                        .filters(f -> f.rewritePath("/orders(?<segment>/?.*)", "/api/orders${segment}"))
                         .uri(serviceUrls.getOrderUrl()))
-                .route("ipl-notification-service", r -> r.path("/notifications/**")
-                        .filters(f -> f.rewritePath("/notifications/(?<segment>.*)", "/api/notifications/${segment}"))
+                .route("ipl-notification-service", r -> r.path("/notifications", "/notifications/**")
+                        .filters(f -> f.rewritePath("/notifications(?<segment>/?.*)", "/api/notifications${segment}"))
                         .uri(serviceUrls.getNotificationUrl()))
                 .build();
     }

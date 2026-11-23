@@ -229,7 +229,8 @@ public class OrderService {
                         .orderId(order.getId())
                         .orderNumber(order.getOrderNumber())
                         .razorpayOrderId(order.getRazorpayOrderId())
-                        .amount(order.getTotalAmount().multiply(BigDecimal.valueOf(100)).longValue())
+                        .amount(order.getTotalAmount())
+                        .amountInPaise(order.getTotalAmount().multiply(BigDecimal.valueOf(100)).longValue())
                         .currency("INR")
                         .userEmail(order.getUserEmail())
                         .build();
@@ -589,11 +590,56 @@ public class OrderService {
     }
 
     private void initDefaultInventory(Long matchId) {
+        // Try syncing from Event Service configuration first
+        try {
+            java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
+            java.net.http.HttpRequest req = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create("http://localhost:8082/api/events/matches/" + matchId + "/configuration"))
+                    .header("X-User-Role", "ADMIN")
+                    .header("X-User-Id", "1")
+                    .GET()
+                    .timeout(java.time.Duration.ofMillis(1200))
+                    .build();
+            java.net.http.HttpResponse<String> resp = client.send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() == 200) {
+                com.fasterxml.jackson.databind.JsonNode root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(resp.body());
+                com.fasterxml.jackson.databind.JsonNode categories = root.path("data").path("categories");
+                if (categories.isArray() && categories.size() > 0) {
+                    List<TicketInventory> invs = new ArrayList<>();
+                    long catId = 1L;
+                    for (com.fasterxml.jackson.databind.JsonNode cat : categories) {
+                        String name = cat.path("categoryName").asText();
+                        BigDecimal price = new BigDecimal(cat.path("price").asText("1000.00"));
+                        int total = cat.path("totalQuantity").asInt(1000);
+                        int avail = cat.path("availableQuantity").asInt(total);
+
+                        TicketInventory ti = TicketInventory.builder()
+                                .matchId(matchId)
+                                .ticketCategoryId(catId++)
+                                .categoryName(name)
+                                .price(price)
+                                .totalQuantity(total)
+                                .availableQuantity(avail)
+                                .build();
+                        invs.add(ti);
+                    }
+                    ticketInventoryRepository.saveAll(invs);
+                    for (TicketInventory ti : invs) {
+                        redisFlashSaleService.syncStock(matchId, ti.getTicketCategoryId(), ti.getAvailableQuantity());
+                    }
+                    log.info("Synced {} franchise-published ticket categories for matchId={}", invs.size(), matchId);
+                    return;
+                }
+            }
+        } catch (Exception ex) {
+            log.debug("Config sync from Event Service skipped for match {}: {}", matchId, ex.getMessage());
+        }
+
         TicketInventory vip = TicketInventory.builder()
                 .matchId(matchId)
                 .ticketCategoryId(1L)
                 .categoryName("VIP Lounge")
-                .price(BigDecimal.valueOf(15000.00))
+                .price(BigDecimal.valueOf(5000.00))
                 .totalQuantity(500)
                 .availableQuantity(500)
                 .build();
@@ -602,7 +648,7 @@ public class OrderService {
                 .matchId(matchId)
                 .ticketCategoryId(2L)
                 .categoryName("Premium Pavilion")
-                .price(BigDecimal.valueOf(5000.00))
+                .price(BigDecimal.valueOf(2500.00))
                 .totalQuantity(2500)
                 .availableQuantity(2500)
                 .build();
@@ -611,7 +657,7 @@ public class OrderService {
                 .matchId(matchId)
                 .ticketCategoryId(3L)
                 .categoryName("General Stand")
-                .price(BigDecimal.valueOf(1500.00))
+                .price(BigDecimal.valueOf(800.00))
                 .totalQuantity(25000)
                 .availableQuantity(25000)
                 .build();
@@ -627,6 +673,17 @@ public class OrderService {
     }
 
     private void initDefaultSeatMap(Long matchId) {
+        List<TicketInventory> currentInv = ticketInventoryRepository.findByMatchId(matchId);
+        BigDecimal vipPrice = BigDecimal.valueOf(5000.00);
+        BigDecimal pavPrice = BigDecimal.valueOf(2500.00);
+        for (TicketInventory inv : currentInv) {
+            if (inv.getCategoryName().toUpperCase().contains("VIP")) {
+                vipPrice = inv.getPrice();
+            } else if (inv.getCategoryName().toUpperCase().contains("PAVILION") || inv.getCategoryName().toUpperCase().contains("PREMIUM")) {
+                pavPrice = inv.getPrice();
+            }
+        }
+
         List<MatchSeat> seats = new ArrayList<>();
 
         // Generate VIP Seats (Row A & B, 1-10)
@@ -639,7 +696,7 @@ public class OrderService {
                     .section("West Wing")
                     .rowName("Row A")
                     .seatNumber("VIP-A-" + i)
-                    .price(BigDecimal.valueOf(15000.00))
+                    .price(vipPrice)
                     .status(SeatStatus.AVAILABLE)
                     .build());
         }
@@ -654,7 +711,7 @@ public class OrderService {
                     .section("Lower Tier")
                     .rowName("Row B")
                     .seatNumber("PAV-B-" + i)
-                    .price(BigDecimal.valueOf(5000.00))
+                    .price(pavPrice)
                     .status(SeatStatus.AVAILABLE)
                     .build());
         }

@@ -73,17 +73,17 @@ public class SecurityConfig {
 
                         // Event Service - coarse-grained role rules (fine-grained
                         // authorization belongs inside Event Service itself)
-                        .pathMatchers(HttpMethod.GET, "/events/**").hasAnyRole("USER", "FRANCHISE", "ADMIN")
-                        .pathMatchers(HttpMethod.POST, "/events/**").hasAnyRole("FRANCHISE", "ADMIN")
-                        .pathMatchers(HttpMethod.PUT, "/events/**").hasAnyRole("FRANCHISE", "ADMIN")
-                        .pathMatchers(HttpMethod.PATCH, "/events/**").hasAnyRole("FRANCHISE", "ADMIN")
-                        .pathMatchers(HttpMethod.DELETE, "/events/**").hasRole("ADMIN")
+                        .pathMatchers(HttpMethod.GET, "/events", "/events/**").hasAnyRole("USER", "FRANCHISE", "ADMIN")
+                        .pathMatchers(HttpMethod.POST, "/events", "/events/**").hasAnyRole("FRANCHISE", "ADMIN")
+                        .pathMatchers(HttpMethod.PUT, "/events", "/events/**").hasAnyRole("FRANCHISE", "ADMIN")
+                        .pathMatchers(HttpMethod.PATCH, "/events", "/events/**").hasAnyRole("FRANCHISE", "ADMIN")
+                        .pathMatchers(HttpMethod.DELETE, "/events", "/events/**").hasRole("ADMIN")
 
                         // Order Service - requires authentication (except /orders/inventory/** above)
-                        .pathMatchers("/orders/**").authenticated()
+                        .pathMatchers("/orders", "/orders/**").authenticated()
 
                         // Notification Service - requires authentication
-                        .pathMatchers("/notifications/**").authenticated()
+                        .pathMatchers("/notifications", "/notifications/**").authenticated()
 
                         // Everything else - e.g. /auth/logout, /auth/me - requires auth
                         .anyExchange().authenticated()

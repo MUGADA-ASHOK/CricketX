@@ -20,11 +20,30 @@ public class NotificationService {
     private final NotificationRepository notificationRepository;
 
     @Transactional(readOnly = true)
+    public List<NotificationResponse> getUserNotifications(Long userId, String role) {
+        if (role != null && !role.isBlank()) {
+            return notificationRepository.findForUserAndRole(userId, role)
+                    .stream()
+                    .map(NotificationResponse::fromEntity)
+                    .toList();
+        }
+        return getUserNotifications(userId);
+    }
+
+    @Transactional(readOnly = true)
     public List<NotificationResponse> getUserNotifications(Long userId) {
         return notificationRepository.findForUser(userId)
                 .stream()
                 .map(NotificationResponse::fromEntity)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public long getUnreadCount(Long userId, String role) {
+        if (role != null && !role.isBlank()) {
+            return notificationRepository.countUnreadForUserAndRole(userId, role);
+        }
+        return getUnreadCount(userId);
     }
 
     @Transactional(readOnly = true)
@@ -43,8 +62,36 @@ public class NotificationService {
     }
 
     @Transactional
+    public int markAllAsRead(Long userId, String role) {
+        if (role != null && !role.isBlank()) {
+            return notificationRepository.markAllAsReadForUserAndRole(userId, role);
+        }
+        return markAllAsRead(userId);
+    }
+
+    @Transactional
     public int markAllAsRead(Long userId) {
         return notificationRepository.markAllAsReadForUser(userId);
+    }
+
+    @Transactional
+    public NotificationResponse sendRoleNotification(String targetRole, String title, String message,
+                                                     NotificationType type, String refType, String refId) {
+        InAppNotification notification = InAppNotification.builder()
+                .userId(null)
+                .targetRole(targetRole)
+                .title(title)
+                .message(message)
+                .type(type)
+                .referenceType(refType)
+                .referenceId(refId)
+                .isRead(false)
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        InAppNotification saved = notificationRepository.save(notification);
+        log.info("Saved role notification id={} for role={}", saved.getId(), targetRole);
+        return NotificationResponse.fromEntity(saved);
     }
 
     @Transactional

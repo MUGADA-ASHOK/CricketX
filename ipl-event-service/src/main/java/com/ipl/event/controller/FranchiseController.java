@@ -40,4 +40,14 @@ public class FranchiseController {
     public ResponseEntity<ApiResponse<FranchiseResponse>> getFranchise(@PathVariable Long id) {
         return ResponseEntity.ok(ApiResponse.success("Franchise details", franchiseService.getFranchise(id)));
     }
+
+    /** Update franchise profile (logo, phone, bio, home stadium). Accessible to ADMIN and FRANCHISE. */
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'FRANCHISE')")
+    public ResponseEntity<ApiResponse<FranchiseResponse>> updateFranchise(
+            @PathVariable Long id,
+            @RequestBody com.ipl.event.dto.franchise.UpdateFranchiseRequest request) {
+        FranchiseResponse response = franchiseService.updateFranchise(id, request);
+        return ResponseEntity.ok(ApiResponse.success("Franchise profile updated successfully", response));
+    }
 }

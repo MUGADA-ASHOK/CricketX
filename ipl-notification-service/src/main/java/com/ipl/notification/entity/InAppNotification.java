@@ -48,6 +48,9 @@ public class InAppNotification {
     @Column(name = "reference_id", length = 64)
     private String referenceId;
 
+    @Column(name = "target_role", length = 30)
+    private String targetRole;
+
     @Column(name = "is_read", nullable = false)
     @Builder.Default
     private boolean isRead = false;

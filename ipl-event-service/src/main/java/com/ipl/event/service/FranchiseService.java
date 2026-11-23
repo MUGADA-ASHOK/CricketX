@@ -74,4 +74,41 @@ public class FranchiseService {
                 .orElseThrow(() -> new FranchiseNotFoundException("Franchise not found: " + id));
         return FranchiseResponse.fromEntity(franchise);
     }
+
+    @Transactional
+    public FranchiseResponse updateFranchise(Long id, com.ipl.event.dto.franchise.UpdateFranchiseRequest request) {
+        Franchise franchise = franchiseRepository.findById(id)
+                .orElseThrow(() -> new FranchiseNotFoundException("Franchise not found: " + id));
+
+        if (request.getFranchiseName() != null && !request.getFranchiseName().isBlank()) {
+            franchise.setFranchiseName(request.getFranchiseName());
+        }
+        if (request.getShortName() != null) {
+            franchise.setShortName(request.getShortName());
+        }
+        if (request.getCity() != null) {
+            franchise.setCity(request.getCity());
+        }
+        if (request.getDescription() != null) {
+            franchise.setDescription(request.getDescription());
+        }
+        if (request.getLogoUrl() != null) {
+            franchise.setLogoUrl(request.getLogoUrl());
+        }
+        if (request.getContactEmail() != null) {
+            franchise.setContactEmail(request.getContactEmail());
+        }
+        if (request.getContactPhone() != null) {
+            franchise.setContactPhone(request.getContactPhone());
+        }
+        if (request.getHomeStadiumId() != null) {
+            Stadium homeStadium = stadiumRepository.findById(request.getHomeStadiumId())
+                    .orElseThrow(() -> new StadiumNotFoundException("Stadium not found: " + request.getHomeStadiumId()));
+            franchise.setHomeStadium(homeStadium);
+        }
+
+        Franchise updated = franchiseRepository.save(franchise);
+        log.info("Updated franchise profile for ID {}: {}", id, updated.getFranchiseName());
+        return FranchiseResponse.fromEntity(updated);
+    }
 }

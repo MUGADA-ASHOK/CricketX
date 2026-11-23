@@ -121,7 +121,7 @@ class AuthServiceTest {
     @DisplayName("Should authenticate user and issue access and refresh token pair")
     void testLogin_Success() {
         LoginRequest request = new LoginRequest("fan@gmail.com", "Password@123");
-        UserPrincipal principal = new UserPrincipal(1L, "fan_user", "fan@gmail.com", "encoded", Role.USER);
+        UserPrincipal principal = new UserPrincipal(sampleUser);
         Authentication auth = mock(Authentication.class);
         when(auth.getPrincipal()).thenReturn(principal);
 

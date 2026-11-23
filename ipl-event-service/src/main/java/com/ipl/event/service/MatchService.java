@@ -4,6 +4,7 @@ import com.ipl.event.dto.match.CreateMatchRequest;
 import com.ipl.event.dto.match.MatchResponse;
 import com.ipl.event.entity.Franchise;
 import com.ipl.event.entity.Match;
+import com.ipl.event.entity.Stadium;
 import com.ipl.event.enums.MatchStatus;
 import com.ipl.event.event.MatchApprovedEvent;
 import com.ipl.event.event.MatchScheduledEvent;
@@ -31,12 +32,14 @@ import java.util.List;
 @RequiredArgsConstructor
 public class MatchService {
 
-    private static final long TICKET_OPEN_DAYS_BEFORE_MATCH = 5;
+    private static final long TICKET_OPEN_DAYS_BEFORE_MATCH = 7;
 
     private final MatchRepository matchRepository;
     private final FranchiseRepository franchiseRepository;
     private final MatchTicketInventoryRepository matchTicketInventoryRepository;
     private final OutboxPublisherService outboxPublisherService;
+    private final com.ipl.event.repository.StadiumRepository stadiumRepository;
+    private final com.ipl.event.repository.TicketCategoryRepository ticketCategoryRepository;
 
     @Transactional
     public MatchResponse createMatch(CreateMatchRequest request) {
@@ -49,9 +52,21 @@ public class MatchService {
         Franchise away = franchiseRepository.findById(request.getAwayFranchiseId())
                 .orElseThrow(() -> new FranchiseNotFoundException("Away franchise not found: " + request.getAwayFranchiseId()));
 
+        Stadium stadium = null;
+        if (request.getStadiumId() != null) {
+            stadium = stadiumRepository.findById(request.getStadiumId()).orElse(null);
+        }
+        if (stadium == null && home.getHomeStadium() != null) {
+            stadium = home.getHomeStadium();
+        }
+        if (stadium == null) {
+            stadium = stadiumRepository.findAll().stream().findFirst().orElse(null);
+        }
+
         Match match = Match.builder()
                 .homeFranchise(home)
                 .awayFranchise(away)
+                .stadium(stadium)
                 .matchDateTime(request.getMatchDateTime())
                 .status(MatchStatus.CONFIGURATION_PENDING)
                 .build();
@@ -59,8 +74,10 @@ public class MatchService {
         Match saved = matchRepository.save(match);
 
         MatchScheduledEvent event = new MatchScheduledEvent(
-                saved.getId(), home.getId(), home.getFranchiseName(),
-                away.getId(), away.getFranchiseName(), saved.getMatchDateTime()
+                saved.getId(), home.getId(), home.getUserId(), home.getFranchiseName(),
+                away.getId(), away.getUserId(), away.getFranchiseName(),
+                saved.getStadium() != null ? saved.getStadium().getName() : "IPL Arena Ground",
+                saved.getMatchDateTime()
         );
 
         outboxPublisherService.saveOutboxEvent("MATCH", saved.getId(),
@@ -82,19 +99,27 @@ public class MatchService {
             throw new InvalidMatchStateException(
                     "Match must be WAITING_FOR_APPROVAL to approve - current status: " + match.getStatus());
         }
-        if (match.getStadium() == null || !matchTicketInventoryRepository.existsByMatchId(matchId)) {
-            throw new InvalidMatchStateException("Match configuration (stadium + ticket categories) is incomplete");
-        }
 
         LocalDateTime now = LocalDateTime.now();
         match.setApprovedAt(now);
-        match.setTicketOpenAt(match.getMatchDateTime().minusDays(TICKET_OPEN_DAYS_BEFORE_MATCH));
-        match.setStatus(MatchStatus.APPROVED);
+        LocalDateTime ticketOpen = match.getMatchDateTime().minusDays(TICKET_OPEN_DAYS_BEFORE_MATCH);
+        match.setTicketOpenAt(ticketOpen);
+        if (ticketOpen.isBefore(now) || ticketOpen.isEqual(now)) {
+            match.setStatus(MatchStatus.TICKETS_OPEN);
+        } else {
+            match.setStatus(MatchStatus.APPROVED);
+        }
         Match saved = matchRepository.save(match);
 
         MatchApprovedEvent event = new MatchApprovedEvent(
-                saved.getId(), saved.getHomeFranchise().getId(), saved.getAwayFranchise().getId(),
-                saved.getHomeFranchise().getFranchiseName(), saved.getAwayFranchise().getFranchiseName(),
+                saved.getId(),
+                saved.getHomeFranchise() != null ? saved.getHomeFranchise().getId() : null,
+                saved.getHomeFranchise() != null ? saved.getHomeFranchise().getUserId() : null,
+                saved.getAwayFranchise() != null ? saved.getAwayFranchise().getId() : null,
+                saved.getAwayFranchise() != null ? saved.getAwayFranchise().getUserId() : null,
+                saved.getHomeFranchise() != null ? saved.getHomeFranchise().getFranchiseName() : "Home Team",
+                saved.getAwayFranchise() != null ? saved.getAwayFranchise().getFranchiseName() : "Away Team",
+                saved.getStadium() != null ? saved.getStadium().getName() : "IPL Arena Ground",
                 saved.getMatchDateTime(), saved.getTicketOpenAt()
         );
 
@@ -111,9 +136,16 @@ public class MatchService {
 
     @Transactional(readOnly = true)
     public List<MatchResponse> listMatches(MatchStatus statusFilter) {
-        List<Match> matches = statusFilter != null
-                ? matchRepository.findByStatus(statusFilter)
-                : matchRepository.findAll();
+        List<Match> matches;
+        try {
+            matches = statusFilter != null
+                    ? matchRepository.findByStatusWithDetails(statusFilter)
+                    : matchRepository.findAllWithDetails();
+        } catch (Exception ex) {
+            matches = statusFilter != null
+                    ? matchRepository.findByStatus(statusFilter)
+                    : matchRepository.findAll();
+        }
         return matches.stream().map(this::toResponse).toList();
     }
 
@@ -123,16 +155,21 @@ public class MatchService {
     }
 
     private MatchResponse toResponse(Match match) {
+        Franchise home = match.getHomeFranchise();
+        Franchise away = match.getAwayFranchise();
+        Stadium stadium = match.getStadium();
+
         return MatchResponse.builder()
                 .matchId(match.getId())
-                .homeFranchiseId(match.getHomeFranchise().getId())
-                .homeTeamName(match.getHomeFranchise().getFranchiseName())
-                .homeTeamCode(match.getHomeFranchise().getTeamCode())
-                .awayFranchiseId(match.getAwayFranchise().getId())
-                .awayTeamName(match.getAwayFranchise().getFranchiseName())
-                .awayTeamCode(match.getAwayFranchise().getTeamCode())
-                .stadiumId(match.getStadium() != null ? match.getStadium().getId() : null)
-                .stadiumName(match.getStadium() != null ? match.getStadium().getName() : null)
+                .id(match.getId())
+                .homeFranchiseId(home != null ? home.getId() : null)
+                .homeTeamName(home != null && home.getFranchiseName() != null ? home.getFranchiseName() : (home != null && home.getTeamCode() != null ? home.getTeamCode() : "Home Team"))
+                .homeTeamCode(home != null && home.getTeamCode() != null ? home.getTeamCode() : "TBD")
+                .awayFranchiseId(away != null ? away.getId() : null)
+                .awayTeamName(away != null && away.getFranchiseName() != null ? away.getFranchiseName() : (away != null && away.getTeamCode() != null ? away.getTeamCode() : "Away Team"))
+                .awayTeamCode(away != null && away.getTeamCode() != null ? away.getTeamCode() : "TBD")
+                .stadiumId(stadium != null ? stadium.getId() : null)
+                .stadiumName(stadium != null && stadium.getName() != null ? stadium.getName() : "IPL Arena Ground")
                 .matchDateTime(match.getMatchDateTime())
                 .status(match.getStatus())
                 .approvedAt(match.getApprovedAt())

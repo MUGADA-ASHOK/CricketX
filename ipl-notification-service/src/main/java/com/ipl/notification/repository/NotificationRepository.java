@@ -13,6 +13,12 @@ import java.util.Optional;
 @Repository
 public interface NotificationRepository extends JpaRepository<InAppNotification, Long> {
 
+    @Query("SELECT n FROM InAppNotification n WHERE n.userId = :userId OR (n.targetRole IS NOT NULL AND n.targetRole = :role) OR (n.userId = 0 AND n.targetRole IS NULL) OR (n.userId IS NULL AND n.targetRole IS NULL) ORDER BY n.createdAt DESC")
+    List<InAppNotification> findForUserAndRole(@Param("userId") Long userId, @Param("role") String role);
+
+    @Query("SELECT COUNT(n) FROM InAppNotification n WHERE (n.userId = :userId OR (n.targetRole IS NOT NULL AND n.targetRole = :role) OR (n.userId = 0 AND n.targetRole IS NULL) OR (n.userId IS NULL AND n.targetRole IS NULL)) AND n.isRead = false")
+    long countUnreadForUserAndRole(@Param("userId") Long userId, @Param("role") String role);
+
     @Query("SELECT n FROM InAppNotification n WHERE n.userId = :userId OR n.userId IS NULL OR n.userId = 0 ORDER BY n.createdAt DESC")
     List<InAppNotification> findForUser(@Param("userId") Long userId);
 
@@ -20,6 +26,10 @@ public interface NotificationRepository extends JpaRepository<InAppNotification,
     long countUnreadForUser(@Param("userId") Long userId);
 
     Optional<InAppNotification> findByIdAndUserId(Long id, Long userId);
+
+    @Modifying
+    @Query("UPDATE InAppNotification n SET n.isRead = true WHERE (n.userId = :userId OR (n.targetRole IS NOT NULL AND n.targetRole = :role) OR (n.userId = 0 AND n.targetRole IS NULL) OR (n.userId IS NULL AND n.targetRole IS NULL)) AND n.isRead = false")
+    int markAllAsReadForUserAndRole(@Param("userId") Long userId, @Param("role") String role);
 
     @Modifying
     @Query("UPDATE InAppNotification n SET n.isRead = true WHERE (n.userId = :userId OR n.userId IS NULL OR n.userId = 0) AND n.isRead = false")

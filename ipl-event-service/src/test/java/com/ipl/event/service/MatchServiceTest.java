@@ -42,6 +42,12 @@ class MatchServiceTest {
     @Mock
     private OutboxPublisherService outboxPublisherService;
 
+    @Mock
+    private com.ipl.event.repository.StadiumRepository stadiumRepository;
+
+    @Mock
+    private com.ipl.event.repository.TicketCategoryRepository ticketCategoryRepository;
+
     @InjectMocks
     private MatchService matchService;
 
@@ -105,13 +111,12 @@ class MatchServiceTest {
                 .build();
 
         when(matchRepository.findById(1L)).thenReturn(Optional.of(match));
-        when(matchTicketInventoryRepository.existsByMatchId(1L)).thenReturn(true);
         when(matchRepository.save(any(Match.class))).thenAnswer(inv -> inv.getArgument(0));
 
         MatchResponse response = matchService.approveMatch(1L);
 
         assertThat(response.getStatus()).isEqualTo(MatchStatus.APPROVED);
-        assertThat(match.getTicketOpenAt()).isEqualTo(matchTime.minusDays(5));
+        assertThat(match.getTicketOpenAt()).isEqualTo(matchTime.minusDays(7));
         verify(outboxPublisherService).saveOutboxEvent(eq("MATCH"), eq(1L), eq("MatchApprovedEvent"), anyString(), any());
     }
 

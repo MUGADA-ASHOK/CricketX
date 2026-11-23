@@ -15,6 +15,8 @@ public class CreateMatchRequest {
     @NotNull
     private Long awayFranchiseId;
 
+    private Long stadiumId;
+
     @NotNull
     @Future
     private LocalDateTime matchDateTime;

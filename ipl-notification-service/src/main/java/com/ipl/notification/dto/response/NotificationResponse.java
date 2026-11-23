@@ -1,5 +1,6 @@
 package com.ipl.notification.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.ipl.notification.entity.InAppNotification;
 import com.ipl.notification.enums.NotificationType;
 import lombok.AllArgsConstructor;
@@ -22,7 +23,20 @@ public class NotificationResponse {
     private NotificationType type;
     private String referenceType;
     private String referenceId;
+    private String targetRole;
+
+    @JsonProperty("isRead")
     private boolean isRead;
+
+    public boolean isRead() {
+        return isRead;
+    }
+
+    @JsonProperty("read")
+    public boolean getRead() {
+        return isRead;
+    }
+
     private LocalDateTime createdAt;
 
     public static NotificationResponse fromEntity(InAppNotification n) {
@@ -34,9 +48,9 @@ public class NotificationResponse {
                 .type(n.getType())
                 .referenceType(n.getReferenceType())
                 .referenceId(n.getReferenceId())
+                .targetRole(n.getTargetRole())
                 .isRead(n.isRead())
                 .createdAt(n.getCreatedAt())
                 .build();
     }
 }
-

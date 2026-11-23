@@ -7,10 +7,12 @@ import com.ipl.event.entity.Match;
 import com.ipl.event.entity.Stadium;
 import com.ipl.event.enums.MatchStatus;
 import com.ipl.event.exception.InvalidTicketConfigurationException;
+import com.ipl.event.kafka.OutboxPublisherService;
 import com.ipl.event.repository.FranchiseRepository;
 import com.ipl.event.repository.MatchRepository;
 import com.ipl.event.repository.MatchTicketInventoryRepository;
 import com.ipl.event.repository.StadiumRepository;
+import com.ipl.event.repository.TicketCategoryRepository;
 import com.ipl.event.security.AuthenticatedUser;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -42,7 +44,13 @@ class MatchConfigurationServiceTest {
     private StadiumRepository stadiumRepository;
 
     @Mock
+    private TicketCategoryRepository ticketCategoryRepository;
+
+    @Mock
     private MatchTicketInventoryRepository matchTicketInventoryRepository;
+
+    @Mock
+    private OutboxPublisherService outboxPublisherService;
 
     @InjectMocks
     private MatchConfigurationService matchConfigurationService;
@@ -108,7 +116,7 @@ class MatchConfigurationServiceTest {
         MatchConfigurationResponse response = matchConfigurationService.createConfiguration(1L, cskAdmin, request);
 
         assertThat(match.getStatus()).isEqualTo(MatchStatus.WAITING_FOR_APPROVAL);
-        assertThat(response.getStatus()).isEqualTo(MatchStatus.WAITING_FOR_APPROVAL);
+        assertThat(response.getMatchStatus()).isEqualTo(MatchStatus.WAITING_FOR_APPROVAL);
     }
 }
 

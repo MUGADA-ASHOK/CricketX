@@ -47,6 +47,28 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
 
+        // Check Gateway injected identity headers first
+        String headerUserId = request.getHeader("X-User-Id");
+        String headerRole = request.getHeader("X-User-Role");
+        String headerEmail = request.getHeader("X-User-Email");
+
+        if (headerUserId != null && !headerUserId.isBlank() && headerRole != null && !headerRole.isBlank()) {
+            try {
+                Long userId = Long.parseLong(headerUserId);
+                String normalizedRole = headerRole.startsWith("ROLE_") ? headerRole : "ROLE_" + headerRole;
+                String cleanRole = headerRole.startsWith("ROLE_") ? headerRole.substring(5) : headerRole;
+                AuthenticatedUser principal = new AuthenticatedUser(userId, headerEmail, cleanRole);
+                List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority(normalizedRole));
+
+                UsernamePasswordAuthenticationToken auth =
+                        new UsernamePasswordAuthenticationToken(principal, null, authorities);
+                SecurityContextHolder.getContext().setAuthentication(auth);
+                filterChain.doFilter(request, response);
+                return;
+            } catch (NumberFormatException ignored) {
+            }
+        }
+
         String header = request.getHeader(HEADER_NAME);
 
         if (header != null && header.startsWith(BEARER_PREFIX)) {

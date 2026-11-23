@@ -9,12 +9,18 @@ import org.springframework.kafka.config.TopicBuilder;
 public class KafkaTopicConfig {
 
     public static final String MATCH_SCHEDULED_TOPIC = "ipl.match.scheduled";
+    public static final String MATCH_CONFIGURED_TOPIC = "ipl.match.configured";
     public static final String MATCH_APPROVED_TOPIC = "ipl.match.approved";
     public static final String MATCH_TICKETS_OPENED_TOPIC = "ipl.match.tickets-opened";
 
     @Bean
     public NewTopic matchScheduledTopic() {
         return TopicBuilder.name(MATCH_SCHEDULED_TOPIC).partitions(1).replicas(1).build();
+    }
+
+    @Bean
+    public NewTopic matchConfiguredTopic() {
+        return TopicBuilder.name(MATCH_CONFIGURED_TOPIC).partitions(1).replicas(1).build();
     }
 
     @Bean

@@ -13,11 +13,18 @@ import java.util.Optional;
 
 public interface MatchRepository extends JpaRepository<Match, Long> {
 
+    @Query("SELECT m FROM Match m LEFT JOIN FETCH m.homeFranchise LEFT JOIN FETCH m.awayFranchise LEFT JOIN FETCH m.stadium WHERE m.status = :status ORDER BY m.matchDateTime ASC")
+    List<Match> findByStatusWithDetails(@Param("status") MatchStatus status);
+
+    @Query("SELECT m FROM Match m LEFT JOIN FETCH m.homeFranchise LEFT JOIN FETCH m.awayFranchise LEFT JOIN FETCH m.stadium ORDER BY m.matchDateTime ASC")
+    List<Match> findAllWithDetails();
+
     List<Match> findByStatus(MatchStatus status);
 
     List<Match> findByHomeFranchiseId(Long homeFranchiseId);
 
-    List<Match> findByStatusAndTicketOpenAtLessThanEqual(MatchStatus status, LocalDateTime now);
+    @Query("SELECT m FROM Match m LEFT JOIN FETCH m.homeFranchise LEFT JOIN FETCH m.awayFranchise WHERE m.status = :status AND m.ticketOpenAt <= :now")
+    List<Match> findByStatusAndTicketOpenAtLessThanEqual(@Param("status") MatchStatus status, @Param("now") LocalDateTime now);
 
     Optional<Match> findById(Long id);
 
